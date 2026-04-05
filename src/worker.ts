@@ -2,7 +2,9 @@ import { definePlugin, startWorkerRpcHost } from "@paperclipai/plugin-sdk";
 import type { PluginEvent, ScopeKey } from "@paperclipai/plugin-sdk";
 import { MemosClient } from "./worker/memos-client.js";
 import { extractMemories } from "./worker/extractor.js";
-import type { MemoryPluginConfig, MemoryStats } from "./worker/types.js";
+import { extractMemoriesWithLlm } from "./worker/llm-extractor.js";
+import { consolidateAgent, findCrossAgentFacts } from "./worker/consolidator.js";
+import type { MemoryPluginConfig, MemoryStats, Memory } from "./worker/types.js";
 
 const DEFAULT_CONFIG: MemoryPluginConfig = {
   enabled: true,
@@ -11,6 +13,8 @@ const DEFAULT_CONFIG: MemoryPluginConfig = {
   autoInject: true,
   maxMemoriesPerInjection: 5,
   injectionTokenBudget: 800,
+  extractionMode: "hybrid",
+  llmExtractionModel: "openai/gpt-4o-mini",
 };
 
 function statsKey(companyId: string): ScopeKey {
@@ -63,6 +67,110 @@ const plugin = definePlugin({
     }
 
     // ══════════════════════════════════════════════════════════
+    // AGENT TOOLS — recall_memories + store_memory
+    // ══════════════════════════════════════════════════════════
+
+    ctx.tools.register(
+      "recall_memories",
+      {
+        displayName: "Recall Memories",
+        description:
+          "Search for relevant context from previous runs stored in long-term memory.",
+        parametersSchema: {
+          type: "object",
+          properties: {
+            query: { type: "string", description: "What to search for" },
+          },
+          required: ["query"],
+        },
+      },
+      async (params, runCtx) => {
+        const { query } = params as { query?: string };
+        if (!query) return { content: "Error: query is required" };
+
+        const agentId = runCtx.agentId;
+        const companyId = runCtx.companyId;
+
+        try {
+          const results = await client.searchMemories(query, agentId, companyId, cfg.maxMemoriesPerInjection);
+          await bumpStats(companyId, agentId, "searches");
+
+          if (results.length === 0) {
+            return { content: "No relevant memories found." };
+          }
+
+          const formatted = results
+            .slice(0, cfg.maxMemoriesPerInjection)
+            .map((m, i) => `${i + 1}. ${m.content.substring(0, 500)}`)
+            .join("\n\n");
+
+          await bumpStats(companyId, agentId, "injected", results.length);
+          ctx.logger.info("Recalled memories for agent", { agentId, query: query.substring(0, 80), count: results.length });
+
+          return {
+            content: `## Memories matching "${query.substring(0, 60)}"\n${formatted}`,
+            data: { count: results.length, agentId },
+          };
+        } catch (err) {
+          ctx.logger.warn("Memory recall failed", { error: String(err) });
+          return { content: `Memory search failed: ${String(err).substring(0, 200)}` };
+        }
+      },
+    );
+
+    ctx.tools.register(
+      "store_memory",
+      {
+        displayName: "Store Memory",
+        description:
+          "Save an important learning, decision, or fact to long-term memory for future runs.",
+        parametersSchema: {
+          type: "object",
+          properties: {
+            content: { type: "string", description: "The memory to save" },
+            category: { type: "string", enum: ["decision", "learning", "fact", "preference", "note"] },
+          },
+          required: ["content"],
+        },
+      },
+      async (params, runCtx) => {
+        const { content, category } = params as { content?: string; category?: string };
+        if (!content) return { content: "Error: content is required" };
+
+        const agentId = runCtx.agentId;
+        const companyId = runCtx.companyId;
+
+        try {
+          // Ensure agent is registered
+          const agents = await ctx.agents.list({ companyId });
+          const agent = agents.find((a) => a.id === agentId);
+          const agentName = agent?.name || agentId;
+
+          await client.registerUser(agentId, agentName);
+          await client.storeMemory(content, {
+            agentId,
+            agentName,
+            companyId,
+            projectId: runCtx.projectId || undefined,
+            source: "agent_tool",
+            category: (category as "decision" | "learning" | "fact" | "preference" | "note") || "note",
+          });
+
+          await bumpStats(companyId, agentId, "stored");
+          ctx.logger.info("Agent stored memory", { agentId, category, contentLen: content.length });
+
+          return {
+            content: `Memory saved: "${content.substring(0, 100)}"`,
+            data: { agentId, category: category || "note" },
+          };
+        } catch (err) {
+          ctx.logger.warn("Memory store failed", { error: String(err) });
+          return { content: `Failed to save memory: ${String(err).substring(0, 200)}` };
+        }
+      },
+    );
+
+    // ══════════════════════════════════════════════════════════
     // EVENT: agent.run.finished — auto-extract memories
     // ══════════════════════════════════════════════════════════
     ctx.events.on("agent.run.finished", async (event: PluginEvent) => {
@@ -101,12 +209,45 @@ const plugin = definePlugin({
       if (!cfg.enabled || !cfg.autoExtract) return;
       if (!summary || summary.length < 100 || !agentId) return;
 
-      ctx.logger.info("Extracting memories from run", { agentId, runId, summaryLen: summary.length });
+      ctx.logger.info("Extracting memories from run", { agentId, runId, summaryLen: summary.length, mode: cfg.extractionMode });
 
       // Ensure agent is registered as a MemOS user
       await client.registerUser(agentId, agentName || agentId);
 
-      const extracted = extractMemories(summary);
+      // ── Extraction based on configured mode ─────────────────
+      let extracted = cfg.extractionMode === "llm" ? [] : extractMemories(summary);
+
+      if (cfg.extractionMode === "llm" || (cfg.extractionMode === "hybrid" && extracted.length < 2 && summary.length > 500)) {
+        // LLM extraction — either primary or fallback
+        const apiKey = process.env.OPENROUTER_API_KEY || "";
+        if (apiKey) {
+          const llmExtracted = await extractMemoriesWithLlm(summary, {
+            apiKey,
+            baseUrl: "https://openrouter.ai/api/v1",
+            model: cfg.llmExtractionModel,
+          });
+          if (llmExtracted.length > 0) {
+            ctx.logger.info("LLM extraction yielded memories", { count: llmExtracted.length, fallback: cfg.extractionMode === "hybrid" });
+            // In hybrid mode, merge (LLM results augment rule-based, deduplicated by content similarity)
+            if (cfg.extractionMode === "hybrid" && extracted.length > 0) {
+              const existingKeys = new Set(extracted.map((m) => m.content.toLowerCase().substring(0, 60)));
+              for (const llmMem of llmExtracted) {
+                const key = llmMem.content.toLowerCase().substring(0, 60);
+                if (!existingKeys.has(key)) {
+                  extracted.push(llmMem);
+                  existingKeys.add(key);
+                }
+              }
+              extracted = extracted.slice(0, 8);
+            } else {
+              extracted = llmExtracted;
+            }
+          }
+        } else {
+          ctx.logger.debug("LLM extraction skipped — OPENROUTER_API_KEY not set");
+        }
+      }
+
       if (extracted.length === 0) {
         ctx.logger.debug("No memories extracted from run", { runId });
         return;
@@ -245,6 +386,62 @@ const plugin = definePlugin({
       return { ok: true };
     });
 
+    /** Update plugin configuration. */
+    ctx.actions.register("memory:update-config", async (params: Record<string, unknown>) => {
+      const updates = params.config as Record<string, unknown> | undefined;
+      if (!updates || typeof updates !== "object") {
+        return { ok: false, error: "Missing config object" };
+      }
+
+      // Merge updates with current config
+      const newCfg = { ...cfg, ...updates };
+
+      // Persist by calling the Paperclip config API
+      const port = process.env.PORT || "3100";
+      try {
+        const pluginId = params._pluginId as string || "";
+        // We need to get our own plugin ID — use the internal state
+        const res = await fetch(`http://localhost:${port}/api/plugins/animusystems.agent-memory/config`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            configJson: {
+              enabled: newCfg.enabled,
+              memosUrl: newCfg.memosUrl,
+              autoExtract: newCfg.autoExtract,
+              autoInject: newCfg.autoInject,
+              maxMemoriesPerInjection: newCfg.maxMemoriesPerInjection,
+              injectionTokenBudget: newCfg.injectionTokenBudget,
+              extractionMode: newCfg.extractionMode,
+              llmExtractionModel: newCfg.llmExtractionModel,
+            },
+          }),
+          signal: AbortSignal.timeout(5000),
+        });
+
+        if (!res.ok) {
+          const text = await res.text().catch(() => "");
+          return { ok: false, error: `Config save failed (${res.status}): ${text.substring(0, 200)}` };
+        }
+
+        // Update in-memory config
+        Object.assign(cfg, updates);
+
+        // Clear cached status so the settings page shows updated values
+        const companyId = params.companyId as string;
+        if (companyId) {
+          await ctx.state.set(
+            { scopeKind: "company", scopeId: companyId, stateKey: "memos-status" },
+            null as unknown as Record<string, unknown>,
+          ).catch(() => {});
+        }
+
+        return { ok: true, config: newCfg };
+      } catch (err) {
+        return { ok: false, error: String(err).substring(0, 200) };
+      }
+    });
+
     /** Register an agent with MemOS (ensures user exists). */
     ctx.actions.register("memory:register-agent", async (params: Record<string, unknown>) => {
       const agentId = params.agentId as string;
@@ -308,6 +505,8 @@ const plugin = definePlugin({
               autoInject: cfg.autoInject,
               maxMemoriesPerInjection: cfg.maxMemoriesPerInjection,
               injectionTokenBudget: cfg.injectionTokenBudget,
+              extractionMode: cfg.extractionMode,
+              llmExtractionModel: cfg.llmExtractionModel,
             },
           },
         );
@@ -324,7 +523,77 @@ const plugin = definePlugin({
           totalAgents: agents.length,
         });
       }
-    }); // end job
+    }); // end health-check job
+
+    // ══════════════════════════════════════════════════════════
+    // SCHEDULED JOB — AutoDream consolidation (daily at 3am)
+    // ══════════════════════════════════════════════════════════
+
+    ctx.jobs.register("autodream-consolidate", async () => {
+      let companyId = "";
+      try {
+        const stored = await ctx.state.get({ scopeKind: "instance", stateKey: "known-company-id" });
+        if (stored && typeof stored === "string") companyId = stored;
+      } catch { /* no company yet */ }
+
+      if (!companyId) {
+        ctx.logger.debug("AutoDream: no company context yet");
+        return;
+      }
+
+      ctx.logger.info("AutoDream consolidation starting", { companyId });
+
+      const agents = await ctx.agents.list({ companyId });
+      const results = [];
+      const agentMemoriesMap = new Map<string, Memory[]>();
+
+      for (const agent of agents.slice(0, 30)) {
+        try {
+          const result = await consolidateAgent(client, agent.id, agent.name || agent.id, companyId);
+          results.push(result);
+
+          // Collect memories for cross-agent analysis
+          if (result.memoriesBefore > 0) {
+            const memories = await client.listMemories(agent.id, companyId);
+            agentMemoriesMap.set(agent.id, memories);
+          }
+        } catch (err) {
+          ctx.logger.warn("AutoDream: failed to consolidate agent", { agentId: agent.id, error: String(err) });
+        }
+      }
+
+      // Cross-agent fact promotion
+      const crossFacts = findCrossAgentFacts(agentMemoriesMap, 3);
+
+      const totalDupes = results.reduce((s, r) => s + r.duplicatesRemoved, 0);
+      const totalStale = results.reduce((s, r) => s + r.staleArchived, 0);
+
+      // Store consolidation result
+      await ctx.state.set(
+        { scopeKind: "company", scopeId: companyId, stateKey: "autodream-last-run" },
+        {
+          timestamp: new Date().toISOString(),
+          agentsProcessed: results.length,
+          totalDuplicatesFound: totalDupes,
+          totalStaleFound: totalStale,
+          crossAgentFacts: crossFacts.length,
+          results: results.filter((r) => r.duplicatesRemoved > 0 || r.staleArchived > 0 || r.errors.length > 0),
+        },
+      );
+
+      await ctx.activity.log({
+        companyId,
+        message: `AutoDream: consolidated ${results.length} agents — ${totalDupes} duplicates, ${totalStale} stale, ${crossFacts.length} cross-agent facts`,
+        metadata: { totalDupes, totalStale, crossAgentFacts: crossFacts.length },
+      });
+
+      ctx.logger.info("AutoDream consolidation complete", {
+        agentsProcessed: results.length,
+        totalDupes,
+        totalStale,
+        crossAgentFacts: crossFacts.length,
+      });
+    }); // end autodream job
 
     // ══════════════════════════════════════════════════════════
     // STATUS DATA — serves the plugin status/dashboard page
@@ -378,6 +647,8 @@ const plugin = definePlugin({
           autoInject: cfg.autoInject,
           maxMemoriesPerInjection: cfg.maxMemoriesPerInjection,
           injectionTokenBudget: cfg.injectionTokenBudget,
+          extractionMode: cfg.extractionMode,
+          llmExtractionModel: cfg.llmExtractionModel,
         },
       };
 

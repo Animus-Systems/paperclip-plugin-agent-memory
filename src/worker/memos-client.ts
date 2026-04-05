@@ -25,8 +25,8 @@ export class MemosClient {
 
   async healthy(): Promise<boolean> {
     try {
-      const res = await fetch(`${this.baseUrl}/docs`, {
-        signal: AbortSignal.timeout(3_000),
+      const res = await fetch(`${this.baseUrl}/openapi.json`, {
+        signal: AbortSignal.timeout(5_000),
       });
       return res.ok;
     } catch {

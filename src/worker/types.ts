@@ -40,4 +40,6 @@ export interface MemoryPluginConfig {
   autoInject: boolean;
   maxMemoriesPerInjection: number;
   injectionTokenBudget: number;
+  extractionMode: "rule_based" | "llm" | "hybrid";
+  llmExtractionModel: string;
 }

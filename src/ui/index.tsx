@@ -55,10 +55,14 @@ interface MemosStatus {
   totalAgents?: number;
   lastCheckAt?: string;
   config: {
+    enabled?: boolean;
+    memosUrl?: string;
     autoExtract: boolean;
     autoInject: boolean;
     maxMemoriesPerInjection: number;
     injectionTokenBudget: number;
+    extractionMode: string;
+    llmExtractionModel: string;
   };
 }
 
@@ -461,16 +465,61 @@ const sectionTitle: React.CSSProperties = {
 };
 
 export function MemorySettingsPage({ context }: PluginSettingsPageProps) {
-  const { data, isLoading } = usePluginData<MemosStatus>("memory:status", {
+  const { data, isLoading, refresh } = usePluginData<MemosStatus>("memory:status", {
     companyId: context.companyId,
   });
-
-  if (isLoading) return <div style={{ padding: "1.5rem", ...muted }}>Loading...</div>;
+  const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState("");
 
   const status = data ?? {
     memosConnected: false, memosUrl: "unknown", totalMemories: 0,
-    config: { autoExtract: true, autoInject: true, maxMemoriesPerInjection: 5, injectionTokenBudget: 800 },
+    config: { autoExtract: true, autoInject: true, maxMemoriesPerInjection: 5, injectionTokenBudget: 800, extractionMode: "hybrid", llmExtractionModel: "openai/gpt-4o-mini" },
   };
+
+  const [localConfig, setLocalConfig] = useState<Record<string, unknown> | null>(null);
+  const cfg = { ...status.config, ...(localConfig ?? {}) };
+
+  const handleChange = (key: string, value: unknown) => {
+    setLocalConfig((prev) => ({ ...(prev ?? {}), [key]: value }));
+    setSaveMsg("");
+  };
+
+  const handleSave = useCallback(async () => {
+    if (!localConfig) return;
+    setSaving(true);
+    setSaveMsg("");
+    try {
+      // Merge current config with changes and save via Paperclip config API
+      const fullConfig = {
+        enabled: cfg.enabled ?? true,
+        memosUrl: cfg.memosUrl ?? "http://memos:8000",
+        autoExtract: cfg.autoExtract,
+        autoInject: cfg.autoInject,
+        maxMemoriesPerInjection: cfg.maxMemoriesPerInjection,
+        injectionTokenBudget: cfg.injectionTokenBudget,
+        extractionMode: cfg.extractionMode,
+        llmExtractionModel: cfg.llmExtractionModel,
+      };
+      const res = await fetch(`/api/plugins/animusystems.agent-memory/config`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ configJson: fullConfig }),
+      });
+      if (res.ok) {
+        setSaveMsg("Saved");
+        setLocalConfig(null);
+        refresh();
+      } else {
+        const body = await res.text().catch(() => "");
+        setSaveMsg(`Save failed (${res.status}): ${body.substring(0, 100)}`);
+      }
+    } catch (err) {
+      setSaveMsg(String(err));
+    }
+    setSaving(false);
+  }, [localConfig, cfg, refresh]);
+
+  if (isLoading) return <div style={{ padding: "1.5rem", ...muted }}>Loading...</div>;
 
   const dot = (on: boolean) => (
     <span style={{
@@ -479,15 +528,26 @@ export function MemorySettingsPage({ context }: PluginSettingsPageProps) {
     }} />
   );
 
-  const boolBadge = (val: boolean) => (
-    <span style={{
-      ...badge,
-      background: val ? "rgba(34,197,94,0.15)" : "rgba(239,68,68,0.15)",
-      color: val ? "rgb(134,239,172)" : "rgb(252,165,165)",
-    }}>
-      {val ? "enabled" : "disabled"}
-    </span>
-  );
+  const selectStyle: React.CSSProperties = {
+    padding: "5px 8px", borderRadius: 4,
+    border: "1px solid rgba(255,255,255,0.15)",
+    background: "rgba(255,255,255,0.06)", color: "#fff",
+    fontSize: "0.8rem", fontFamily: "inherit", outline: "none",
+    cursor: "pointer",
+  };
+
+  const inputStyle: React.CSSProperties = {
+    ...selectStyle, fontFamily: "monospace", minWidth: 220, textAlign: "right" as const,
+  };
+
+  const toggleStyle = (on: boolean): React.CSSProperties => ({
+    padding: "4px 10px", borderRadius: 4, border: "none",
+    background: on ? "rgba(34,197,94,0.2)" : "rgba(239,68,68,0.15)",
+    color: on ? "rgb(134,239,172)" : "rgb(252,165,165)",
+    fontSize: "0.8rem", fontWeight: 500, cursor: "pointer",
+  });
+
+  const hasChanges = localConfig !== null && Object.keys(localConfig).length > 0;
 
   return (
     <div style={{ padding: "1.5rem", maxWidth: 700 }}>
@@ -512,7 +572,7 @@ export function MemorySettingsPage({ context }: PluginSettingsPageProps) {
       <div style={sectionTitle}>Infrastructure</div>
       <div style={card}>
         <div style={configRow}><span style={muted}>Embedder</span><span style={{ color: "#fff" }}>Ollama — nomic-embed-text (768d, Metal GPU)</span></div>
-        <div style={configRow}><span style={muted}>Chat LLM</span><span style={{ color: "#fff" }}>OpenRouter — gpt-4o-mini</span></div>
+        <div style={configRow}><span style={muted}>Chat LLM</span><span style={{ color: "#fff" }}>OpenRouter — mistral-small-3.2-24b-instruct</span></div>
         <div style={configRow}><span style={muted}>Vector DB</span><span style={{ color: "#fff" }}>Qdrant (768d cosine)</span></div>
         <div style={configRow}><span style={muted}>Graph DB</span><span style={{ color: "#fff" }}>Neo4j 5.26</span></div>
       </div>
@@ -528,17 +588,68 @@ export function MemorySettingsPage({ context }: PluginSettingsPageProps) {
           <span style={{ color: "#fff" }}>{status.agentsWithMemory ?? "—"} / {status.totalAgents ?? "—"}</span>
         </div>
       </div>
-      <div style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.3)", marginTop: 4, lineHeight: 1.4 }}>
-        MemOS consolidates run outputs into evolving knowledge objects (skills, procedures, preferences). One object may contain data from many runs — it gets richer over time, not duplicated.
-      </div>
 
       <div style={sectionTitle}>Plugin Configuration</div>
       <div style={card}>
-        <div style={configRow}><span style={muted}>Auto-extract</span>{boolBadge(status.config.autoExtract)}</div>
-        <div style={configRow}><span style={muted}>Auto-inject</span>{boolBadge(status.config.autoInject)}</div>
-        <div style={configRow}><span style={muted}>Max per injection</span><span style={{ color: "#fff" }}>{status.config.maxMemoriesPerInjection}</span></div>
-        <div style={{ ...configRow, borderBottom: "none" }}><span style={muted}>Token budget</span><span style={{ color: "#fff" }}>{status.config.injectionTokenBudget}</span></div>
+        <div style={configRow}>
+          <span style={muted}>Auto-extract</span>
+          <button style={toggleStyle(cfg.autoExtract as boolean)} onClick={() => handleChange("autoExtract", !cfg.autoExtract)}>
+            {cfg.autoExtract ? "enabled" : "disabled"}
+          </button>
+        </div>
+        <div style={configRow}>
+          <span style={muted}>Auto-inject</span>
+          <button style={toggleStyle(cfg.autoInject as boolean)} onClick={() => handleChange("autoInject", !cfg.autoInject)}>
+            {cfg.autoInject ? "enabled" : "disabled"}
+          </button>
+        </div>
+        <div style={configRow}>
+          <span style={muted}>Extraction mode</span>
+          <select style={selectStyle} value={cfg.extractionMode as string} onChange={(e) => handleChange("extractionMode", e.target.value)}>
+            <option value="rule_based">Rule-based (free)</option>
+            <option value="hybrid">Hybrid (rule + LLM fallback)</option>
+            <option value="llm">LLM only</option>
+          </select>
+        </div>
+        <div style={configRow}>
+          <span style={muted}>LLM extraction model</span>
+          <input style={inputStyle} value={cfg.llmExtractionModel as string} onChange={(e) => handleChange("llmExtractionModel", e.target.value)} placeholder="openai/gpt-4o-mini" />
+        </div>
+        <div style={configRow}>
+          <span style={muted}>Max memories per injection</span>
+          <input style={{ ...selectStyle, width: 80, textAlign: "center" }} type="number" min={1} max={20} value={cfg.maxMemoriesPerInjection as number} onChange={(e) => handleChange("maxMemoriesPerInjection", parseInt(e.target.value) || 5)} />
+        </div>
+        <div style={{ ...configRow, borderBottom: "none" }}>
+          <span style={muted}>Token budget</span>
+          <input style={{ ...selectStyle, width: 100, textAlign: "center" }} type="number" min={100} max={5000} step={100} value={cfg.injectionTokenBudget as number} onChange={(e) => handleChange("injectionTokenBudget", parseInt(e.target.value) || 800)} />
+        </div>
       </div>
+
+      {/* Save bar */}
+      {hasChanges && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12 }}>
+          <button onClick={handleSave} disabled={saving} style={{
+            padding: "8px 20px", borderRadius: 6, border: "none",
+            background: "rgba(99,102,241,0.3)", color: "rgb(165,168,255)",
+            fontSize: "0.85rem", fontWeight: 500, cursor: saving ? "wait" : "pointer",
+            opacity: saving ? 0.6 : 1,
+          }}>
+            {saving ? "Saving..." : "Save Changes"}
+          </button>
+          <button onClick={() => { setLocalConfig(null); setSaveMsg(""); }} style={{
+            padding: "8px 14px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)",
+            background: "transparent", color: "rgba(255,255,255,0.5)",
+            fontSize: "0.8rem", cursor: "pointer",
+          }}>
+            Cancel
+          </button>
+          {saveMsg && (
+            <span style={{ fontSize: "0.8rem", color: saveMsg === "Saved" ? "rgb(134,239,172)" : "rgb(252,165,165)" }}>
+              {saveMsg}
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }

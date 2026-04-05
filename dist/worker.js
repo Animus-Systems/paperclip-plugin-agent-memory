@@ -795,7 +795,8 @@ ${formatted}`,
               maxMemoriesPerInjection: cfg.maxMemoriesPerInjection,
               injectionTokenBudget: cfg.injectionTokenBudget,
               extractionMode: cfg.extractionMode,
-              llmExtractionModel: cfg.llmExtractionModel
+              llmExtractionModel: cfg.llmExtractionModel,
+              llmFallbackModel: cfg.llmFallbackModel
             }
           }
         );
@@ -909,7 +910,8 @@ ${formatted}`,
           maxMemoriesPerInjection: cfg.maxMemoriesPerInjection,
           injectionTokenBudget: cfg.injectionTokenBudget,
           extractionMode: cfg.extractionMode,
-          llmExtractionModel: cfg.llmExtractionModel
+          llmExtractionModel: cfg.llmExtractionModel,
+          llmFallbackModel: cfg.llmFallbackModel
         }
       };
       if (companyId) {

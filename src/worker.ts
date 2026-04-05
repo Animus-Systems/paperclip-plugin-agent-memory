@@ -509,6 +509,7 @@ const plugin = definePlugin({
               injectionTokenBudget: cfg.injectionTokenBudget,
               extractionMode: cfg.extractionMode,
               llmExtractionModel: cfg.llmExtractionModel,
+              llmFallbackModel: cfg.llmFallbackModel,
             },
           },
         );
@@ -651,6 +652,7 @@ const plugin = definePlugin({
           injectionTokenBudget: cfg.injectionTokenBudget,
           extractionMode: cfg.extractionMode,
           llmExtractionModel: cfg.llmExtractionModel,
+          llmFallbackModel: cfg.llmFallbackModel,
         },
       };
 

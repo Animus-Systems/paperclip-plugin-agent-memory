@@ -372,7 +372,7 @@ function MemorySettingsPage({ context }) {
     memosConnected: false,
     memosUrl: "unknown",
     totalMemories: 0,
-    config: { autoExtract: true, autoInject: true, maxMemoriesPerInjection: 5, injectionTokenBudget: 800, extractionMode: "hybrid", llmExtractionModel: "openai/gpt-4o-mini" }
+    config: { autoExtract: true, autoInject: true, maxMemoriesPerInjection: 5, injectionTokenBudget: 800, extractionMode: "hybrid", llmExtractionModel: "openai/gpt-4o-mini", llmFallbackModel: "google/gemini-2.5-flash" }
   };
   const [localConfig, setLocalConfig] = useState(null);
   const cfg = { ...status.config, ...localConfig ?? {} };
@@ -393,7 +393,8 @@ function MemorySettingsPage({ context }) {
         maxMemoriesPerInjection: cfg.maxMemoriesPerInjection,
         injectionTokenBudget: cfg.injectionTokenBudget,
         extractionMode: cfg.extractionMode,
-        llmExtractionModel: cfg.llmExtractionModel
+        llmExtractionModel: cfg.llmExtractionModel,
+        llmFallbackModel: cfg.llmFallbackModel
       };
       const res = await fetch(`/api/plugins/animusystems.agent-memory/config`, {
         method: "POST",
@@ -524,6 +525,10 @@ function MemorySettingsPage({ context }) {
       /* @__PURE__ */ jsxs("div", { style: configRow, children: [
         /* @__PURE__ */ jsx("span", { style: muted, children: "LLM extraction model" }),
         /* @__PURE__ */ jsx("input", { style: inputStyle, value: cfg.llmExtractionModel, onChange: (e) => handleChange("llmExtractionModel", e.target.value), placeholder: "openai/gpt-4o-mini" })
+      ] }),
+      /* @__PURE__ */ jsxs("div", { style: configRow, children: [
+        /* @__PURE__ */ jsx("span", { style: muted, children: "Fallback model" }),
+        /* @__PURE__ */ jsx("input", { style: inputStyle, value: cfg.llmFallbackModel ?? "", onChange: (e) => handleChange("llmFallbackModel", e.target.value), placeholder: "google/gemini-2.5-flash" })
       ] }),
       /* @__PURE__ */ jsxs("div", { style: configRow, children: [
         /* @__PURE__ */ jsx("span", { style: muted, children: "Max memories per injection" }),

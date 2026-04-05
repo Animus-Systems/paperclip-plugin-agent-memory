@@ -63,6 +63,7 @@ interface MemosStatus {
     injectionTokenBudget: number;
     extractionMode: string;
     llmExtractionModel: string;
+    llmFallbackModel: string;
   };
 }
 
@@ -473,7 +474,7 @@ export function MemorySettingsPage({ context }: PluginSettingsPageProps) {
 
   const status = data ?? {
     memosConnected: false, memosUrl: "unknown", totalMemories: 0,
-    config: { autoExtract: true, autoInject: true, maxMemoriesPerInjection: 5, injectionTokenBudget: 800, extractionMode: "hybrid", llmExtractionModel: "openai/gpt-4o-mini" },
+    config: { autoExtract: true, autoInject: true, maxMemoriesPerInjection: 5, injectionTokenBudget: 800, extractionMode: "hybrid", llmExtractionModel: "openai/gpt-4o-mini", llmFallbackModel: "google/gemini-2.5-flash" },
   };
 
   const [localConfig, setLocalConfig] = useState<Record<string, unknown> | null>(null);
@@ -499,6 +500,7 @@ export function MemorySettingsPage({ context }: PluginSettingsPageProps) {
         injectionTokenBudget: cfg.injectionTokenBudget,
         extractionMode: cfg.extractionMode,
         llmExtractionModel: cfg.llmExtractionModel,
+        llmFallbackModel: cfg.llmFallbackModel,
       };
       const res = await fetch(`/api/plugins/animusystems.agent-memory/config`, {
         method: "POST",
@@ -614,6 +616,10 @@ export function MemorySettingsPage({ context }: PluginSettingsPageProps) {
         <div style={configRow}>
           <span style={muted}>LLM extraction model</span>
           <input style={inputStyle} value={cfg.llmExtractionModel as string} onChange={(e) => handleChange("llmExtractionModel", e.target.value)} placeholder="openai/gpt-4o-mini" />
+        </div>
+        <div style={configRow}>
+          <span style={muted}>Fallback model</span>
+          <input style={inputStyle} value={(cfg.llmFallbackModel as string) ?? ""} onChange={(e) => handleChange("llmFallbackModel", e.target.value)} placeholder="google/gemini-2.5-flash" />
         </div>
         <div style={configRow}>
           <span style={muted}>Max memories per injection</span>

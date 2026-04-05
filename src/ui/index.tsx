@@ -477,8 +477,18 @@ export function MemorySettingsPage({ context }: PluginSettingsPageProps) {
     config: { autoExtract: true, autoInject: true, maxMemoriesPerInjection: 5, injectionTokenBudget: 800, extractionMode: "hybrid", llmExtractionModel: "openai/gpt-4o-mini", llmFallbackModel: "google/gemini-2.5-flash" },
   };
 
+  // Read config directly from the Paperclip config API (not the data handler which caches)
+  const [dbConfig, setDbConfig] = useState<Record<string, unknown> | null>(null);
+  React.useEffect(() => {
+    fetch(`/api/plugins/animusystems.agent-memory/config`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => { if (d?.configJson) setDbConfig(d.configJson); })
+      .catch(() => {});
+  }, []);
+
   const [localConfig, setLocalConfig] = useState<Record<string, unknown> | null>(null);
-  const cfg = { ...status.config, ...(localConfig ?? {}) };
+  // Priority: local edits > DB config > data handler config > defaults
+  const cfg = { ...status.config, ...(dbConfig ?? {}), ...(localConfig ?? {}) };
 
   const handleChange = (key: string, value: unknown) => {
     setLocalConfig((prev) => ({ ...(prev ?? {}), [key]: value }));
@@ -490,7 +500,6 @@ export function MemorySettingsPage({ context }: PluginSettingsPageProps) {
     setSaving(true);
     setSaveMsg("");
     try {
-      // Merge current config with changes and save via Paperclip config API
       const fullConfig = {
         enabled: cfg.enabled ?? true,
         memosUrl: cfg.memosUrl ?? "http://memos:8000",
@@ -509,9 +518,8 @@ export function MemorySettingsPage({ context }: PluginSettingsPageProps) {
       });
       if (res.ok) {
         setSaveMsg("Saved");
-        // Don't clear localConfig or refresh — the data handler may return
-        // stale cached values. Keep showing the user's saved values until
-        // next page load when fresh config will be read.
+        setDbConfig(fullConfig);
+        setLocalConfig(null);
       } else {
         const body = await res.text().catch(() => "");
         setSaveMsg(`Save failed (${res.status}): ${body.substring(0, 100)}`);

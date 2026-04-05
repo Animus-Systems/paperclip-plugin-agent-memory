@@ -1,5 +1,5 @@
 // src/ui/index.tsx
-import { useState, useCallback } from "react";
+import React, { useState, useCallback } from "react";
 import {
   usePluginData,
   usePluginAction,
@@ -374,8 +374,15 @@ function MemorySettingsPage({ context }) {
     totalMemories: 0,
     config: { autoExtract: true, autoInject: true, maxMemoriesPerInjection: 5, injectionTokenBudget: 800, extractionMode: "hybrid", llmExtractionModel: "openai/gpt-4o-mini", llmFallbackModel: "google/gemini-2.5-flash" }
   };
+  const [dbConfig, setDbConfig] = useState(null);
+  React.useEffect(() => {
+    fetch(`/api/plugins/animusystems.agent-memory/config`).then((r) => r.ok ? r.json() : null).then((d) => {
+      if (d?.configJson) setDbConfig(d.configJson);
+    }).catch(() => {
+    });
+  }, []);
   const [localConfig, setLocalConfig] = useState(null);
-  const cfg = { ...status.config, ...localConfig ?? {} };
+  const cfg = { ...status.config, ...dbConfig ?? {}, ...localConfig ?? {} };
   const handleChange = (key, value) => {
     setLocalConfig((prev) => ({ ...prev ?? {}, [key]: value }));
     setSaveMsg("");
@@ -403,6 +410,8 @@ function MemorySettingsPage({ context }) {
       });
       if (res.ok) {
         setSaveMsg("Saved");
+        setDbConfig(fullConfig);
+        setLocalConfig(null);
       } else {
         const body = await res.text().catch(() => "");
         setSaveMsg(`Save failed (${res.status}): ${body.substring(0, 100)}`);

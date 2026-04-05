@@ -509,8 +509,9 @@ export function MemorySettingsPage({ context }: PluginSettingsPageProps) {
       });
       if (res.ok) {
         setSaveMsg("Saved");
-        setLocalConfig(null);
-        refresh();
+        // Don't clear localConfig or refresh — the data handler may return
+        // stale cached values. Keep showing the user's saved values until
+        // next page load when fresh config will be read.
       } else {
         const body = await res.text().catch(() => "");
         setSaveMsg(`Save failed (${res.status}): ${body.substring(0, 100)}`);

@@ -403,8 +403,6 @@ function MemorySettingsPage({ context }) {
       });
       if (res.ok) {
         setSaveMsg("Saved");
-        setLocalConfig(null);
-        refresh();
       } else {
         const body = await res.text().catch(() => "");
         setSaveMsg(`Save failed (${res.status}): ${body.substring(0, 100)}`);

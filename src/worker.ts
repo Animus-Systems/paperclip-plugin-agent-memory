@@ -489,12 +489,16 @@ const plugin = definePlugin({
           } catch { /* skip */ }
         }
 
+        // Read fresh config from DB so cached status reflects latest saved values
+        const jobRaw = await ctx.config.get();
+        const jobCfg = { ...DEFAULT_CONFIG, ...(jobRaw as Record<string, unknown>) };
+
         // Store status snapshot in plugin state
         await ctx.state.set(
           { scopeKind: "company", scopeId: company.id, stateKey: "memos-status" },
           {
             memosConnected: healthy,
-            memosUrl: cfg.memosUrl,
+            memosUrl: jobCfg.memosUrl,
             embedderBackend: "ollama (nomic-embed-text)",
             chatProvider: "openrouter (gpt-4o-mini)",
             totalMemories,
@@ -503,13 +507,13 @@ const plugin = definePlugin({
             totalAgents: agents.length,
             lastCheckAt: new Date().toISOString(),
             config: {
-              autoExtract: cfg.autoExtract,
-              autoInject: cfg.autoInject,
-              maxMemoriesPerInjection: cfg.maxMemoriesPerInjection,
-              injectionTokenBudget: cfg.injectionTokenBudget,
-              extractionMode: cfg.extractionMode,
-              llmExtractionModel: cfg.llmExtractionModel,
-              llmFallbackModel: cfg.llmFallbackModel,
+              autoExtract: jobCfg.autoExtract,
+              autoInject: jobCfg.autoInject,
+              maxMemoriesPerInjection: jobCfg.maxMemoriesPerInjection,
+              injectionTokenBudget: jobCfg.injectionTokenBudget,
+              extractionMode: jobCfg.extractionMode,
+              llmExtractionModel: jobCfg.llmExtractionModel,
+              llmFallbackModel: jobCfg.llmFallbackModel,
             },
           },
         );
@@ -605,11 +609,26 @@ const plugin = definePlugin({
     ctx.data.register("memory:status", async (params: Record<string, unknown>) => {
       const companyId = params.companyId as string;
 
-      // Check cached status first
+      // Check cached status first, but always overlay fresh config from DB
       const cached = await ctx.state.get(
         { scopeKind: "company", scopeId: companyId, stateKey: "memos-status" },
-      );
-      if (cached) return cached;
+      ) as Record<string, unknown> | null;
+      if (cached) {
+        const latestRaw = await ctx.config.get();
+        const latestCfg = { ...DEFAULT_CONFIG, ...(latestRaw as Record<string, unknown>) };
+        return {
+          ...cached,
+          config: {
+            autoExtract: latestCfg.autoExtract,
+            autoInject: latestCfg.autoInject,
+            maxMemoriesPerInjection: latestCfg.maxMemoriesPerInjection,
+            injectionTokenBudget: latestCfg.injectionTokenBudget,
+            extractionMode: latestCfg.extractionMode,
+            llmExtractionModel: latestCfg.llmExtractionModel,
+            llmFallbackModel: latestCfg.llmFallbackModel,
+          },
+        };
+      }
 
       // No cached status — do a live check and count
       const healthy = await client.healthy();
@@ -635,9 +654,13 @@ const plugin = definePlugin({
         } catch { /* agents.list may fail without capability */ }
       }
 
+      // Read fresh config from DB (not in-memory cache) so UI reflects saved values
+      const freshRaw = await ctx.config.get();
+      const freshCfg = { ...DEFAULT_CONFIG, ...(freshRaw as Record<string, unknown>) };
+
       const result = {
         memosConnected: healthy,
-        memosUrl: cfg.memosUrl,
+        memosUrl: freshCfg.memosUrl,
         embedderBackend: "ollama (nomic-embed-text)",
         chatProvider: "openrouter (gpt-4o-mini)",
         totalMemories,
@@ -646,13 +669,13 @@ const plugin = definePlugin({
         totalAgents,
         lastCheckAt: new Date().toISOString(),
         config: {
-          autoExtract: cfg.autoExtract,
-          autoInject: cfg.autoInject,
-          maxMemoriesPerInjection: cfg.maxMemoriesPerInjection,
-          injectionTokenBudget: cfg.injectionTokenBudget,
-          extractionMode: cfg.extractionMode,
-          llmExtractionModel: cfg.llmExtractionModel,
-          llmFallbackModel: cfg.llmFallbackModel,
+          autoExtract: freshCfg.autoExtract,
+          autoInject: freshCfg.autoInject,
+          maxMemoriesPerInjection: freshCfg.maxMemoriesPerInjection,
+          injectionTokenBudget: freshCfg.injectionTokenBudget,
+          extractionMode: freshCfg.extractionMode,
+          llmExtractionModel: freshCfg.llmExtractionModel,
+          llmFallbackModel: freshCfg.llmFallbackModel,
         },
       };
 

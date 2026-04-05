@@ -777,11 +777,13 @@ ${formatted}`,
           } catch {
           }
         }
+        const jobRaw = await ctx.config.get();
+        const jobCfg = { ...DEFAULT_CONFIG, ...jobRaw };
         await ctx.state.set(
           { scopeKind: "company", scopeId: company.id, stateKey: "memos-status" },
           {
             memosConnected: healthy,
-            memosUrl: cfg.memosUrl,
+            memosUrl: jobCfg.memosUrl,
             embedderBackend: "ollama (nomic-embed-text)",
             chatProvider: "openrouter (gpt-4o-mini)",
             totalMemories,
@@ -790,13 +792,13 @@ ${formatted}`,
             totalAgents: agents.length,
             lastCheckAt: (/* @__PURE__ */ new Date()).toISOString(),
             config: {
-              autoExtract: cfg.autoExtract,
-              autoInject: cfg.autoInject,
-              maxMemoriesPerInjection: cfg.maxMemoriesPerInjection,
-              injectionTokenBudget: cfg.injectionTokenBudget,
-              extractionMode: cfg.extractionMode,
-              llmExtractionModel: cfg.llmExtractionModel,
-              llmFallbackModel: cfg.llmFallbackModel
+              autoExtract: jobCfg.autoExtract,
+              autoInject: jobCfg.autoInject,
+              maxMemoriesPerInjection: jobCfg.maxMemoriesPerInjection,
+              injectionTokenBudget: jobCfg.injectionTokenBudget,
+              extractionMode: jobCfg.extractionMode,
+              llmExtractionModel: jobCfg.llmExtractionModel,
+              llmFallbackModel: jobCfg.llmFallbackModel
             }
           }
         );
@@ -870,7 +872,22 @@ ${formatted}`,
       const cached = await ctx.state.get(
         { scopeKind: "company", scopeId: companyId, stateKey: "memos-status" }
       );
-      if (cached) return cached;
+      if (cached) {
+        const latestRaw = await ctx.config.get();
+        const latestCfg = { ...DEFAULT_CONFIG, ...latestRaw };
+        return {
+          ...cached,
+          config: {
+            autoExtract: latestCfg.autoExtract,
+            autoInject: latestCfg.autoInject,
+            maxMemoriesPerInjection: latestCfg.maxMemoriesPerInjection,
+            injectionTokenBudget: latestCfg.injectionTokenBudget,
+            extractionMode: latestCfg.extractionMode,
+            llmExtractionModel: latestCfg.llmExtractionModel,
+            llmFallbackModel: latestCfg.llmFallbackModel
+          }
+        };
+      }
       const healthy = await client.healthy();
       let totalMemories = 0;
       let agentsWithMemory = 0;
@@ -894,9 +911,11 @@ ${formatted}`,
         } catch {
         }
       }
+      const freshRaw = await ctx.config.get();
+      const freshCfg = { ...DEFAULT_CONFIG, ...freshRaw };
       const result = {
         memosConnected: healthy,
-        memosUrl: cfg.memosUrl,
+        memosUrl: freshCfg.memosUrl,
         embedderBackend: "ollama (nomic-embed-text)",
         chatProvider: "openrouter (gpt-4o-mini)",
         totalMemories,
@@ -905,13 +924,13 @@ ${formatted}`,
         totalAgents,
         lastCheckAt: (/* @__PURE__ */ new Date()).toISOString(),
         config: {
-          autoExtract: cfg.autoExtract,
-          autoInject: cfg.autoInject,
-          maxMemoriesPerInjection: cfg.maxMemoriesPerInjection,
-          injectionTokenBudget: cfg.injectionTokenBudget,
-          extractionMode: cfg.extractionMode,
-          llmExtractionModel: cfg.llmExtractionModel,
-          llmFallbackModel: cfg.llmFallbackModel
+          autoExtract: freshCfg.autoExtract,
+          autoInject: freshCfg.autoInject,
+          maxMemoriesPerInjection: freshCfg.maxMemoriesPerInjection,
+          injectionTokenBudget: freshCfg.injectionTokenBudget,
+          extractionMode: freshCfg.extractionMode,
+          llmExtractionModel: freshCfg.llmExtractionModel,
+          llmFallbackModel: freshCfg.llmFallbackModel
         }
       };
       if (companyId) {

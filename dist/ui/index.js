@@ -528,7 +528,7 @@ function MemorySettingsPage({ context }) {
       ] }),
       /* @__PURE__ */ jsxs("div", { style: configRow, children: [
         /* @__PURE__ */ jsx("span", { style: muted, children: "Fallback model" }),
-        /* @__PURE__ */ jsx("input", { style: inputStyle, value: cfg.llmFallbackModel ?? "", onChange: (e) => handleChange("llmFallbackModel", e.target.value), placeholder: "google/gemini-2.5-flash" })
+        /* @__PURE__ */ jsx("input", { style: inputStyle, value: String(cfg.llmFallbackModel ?? "google/gemini-2.5-flash"), onChange: (e) => handleChange("llmFallbackModel", e.target.value) })
       ] }),
       /* @__PURE__ */ jsxs("div", { style: configRow, children: [
         /* @__PURE__ */ jsx("span", { style: muted, children: "Max memories per injection" }),

@@ -619,7 +619,7 @@ export function MemorySettingsPage({ context }: PluginSettingsPageProps) {
         </div>
         <div style={configRow}>
           <span style={muted}>Fallback model</span>
-          <input style={inputStyle} value={(cfg.llmFallbackModel as string) ?? ""} onChange={(e) => handleChange("llmFallbackModel", e.target.value)} placeholder="google/gemini-2.5-flash" />
+          <input style={inputStyle} value={String(cfg.llmFallbackModel ?? "google/gemini-2.5-flash")} onChange={(e) => handleChange("llmFallbackModel", e.target.value)} />
         </div>
         <div style={configRow}>
           <span style={muted}>Max memories per injection</span>

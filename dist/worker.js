@@ -12,8 +12,8 @@ var MemosClient = class {
   // ── Health check ────────────────────────────────────────────
   async healthy() {
     try {
-      const res = await fetch(`${this.baseUrl}/docs`, {
-        signal: AbortSignal.timeout(3e3)
+      const res = await fetch(`${this.baseUrl}/openapi.json`, {
+        signal: AbortSignal.timeout(5e3)
       });
       return res.ok;
     } catch {
@@ -220,6 +220,179 @@ function extractMemories(text) {
   return results.sort((a, b) => b.confidence - a.confidence).slice(0, MAX_EXTRACTIONS);
 }
 
+// src/worker/llm-extractor.ts
+var EXTRACTION_PROMPT = `You are a memory extraction system for an AI agent platform. Given an agent's run summary, extract distinct, self-contained facts, decisions, learnings, and preferences.
+
+Rules:
+- Each memory must be a clear, standalone statement (15-300 characters)
+- Categorize each as: decision, learning, fact, preference, or note
+- Assign a confidence score (0.0 to 1.0) based on how clearly stated the information is
+- Extract at most 8 memories
+- Skip code snippets, file paths, and generic statements
+- Focus on information that would be valuable in future runs
+
+Respond with a JSON array. Example:
+[
+  {"content": "Client prefers weekly reports sent on Monday mornings", "category": "preference", "confidence": 0.85},
+  {"content": "The API rate limit for endpoint X is 100 requests per minute", "category": "fact", "confidence": 0.9}
+]
+
+If there is nothing worth extracting, respond with an empty array: []`;
+var MAX_SUMMARY_CHARS = 3e3;
+async function extractMemoriesWithLlm(summary, config) {
+  if (!summary || summary.length < 100) return [];
+  if (!config.apiKey) return [];
+  const truncatedSummary = summary.substring(0, MAX_SUMMARY_CHARS);
+  const modelsToTry = [config.model];
+  if (config.fallbackModel && config.fallbackModel !== config.model) {
+    modelsToTry.push(config.fallbackModel);
+  }
+  for (const model of modelsToTry) {
+    try {
+      const res = await fetch(`${config.baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${config.apiKey}`,
+          "HTTP-Referer": "https://paperclip.ing",
+          "X-Title": "Paperclip Memory Extraction"
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: EXTRACTION_PROMPT },
+            { role: "user", content: `Extract memories from this agent run summary:
+
+${truncatedSummary}` }
+          ],
+          max_tokens: 1024,
+          temperature: 0.1,
+          response_format: { type: "json_object" }
+        }),
+        signal: AbortSignal.timeout(1e4)
+      });
+      if (!res.ok) {
+        if (res.status === 429 && modelsToTry.indexOf(model) < modelsToTry.length - 1) continue;
+        return [];
+      }
+      const data = await res.json();
+      const content = data?.choices?.[0]?.message?.content;
+      if (!content) return [];
+      let parsed;
+      try {
+        parsed = JSON.parse(content);
+      } catch {
+        const arrayMatch = content.match(/\[[\s\S]*\]/);
+        if (arrayMatch) {
+          try {
+            parsed = JSON.parse(arrayMatch[0]);
+          } catch {
+            return [];
+          }
+        } else {
+          return [];
+        }
+      }
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        const obj = parsed;
+        if (Array.isArray(obj.memories)) parsed = obj.memories;
+        else if (Array.isArray(obj.results)) parsed = obj.results;
+        else if (Array.isArray(obj.extractions)) parsed = obj.extractions;
+        else return [];
+      }
+      if (!Array.isArray(parsed)) return [];
+      const results = [];
+      for (const item of parsed) {
+        const m = item;
+        if (!m.content || typeof m.content !== "string") continue;
+        if (m.content.length < 15 || m.content.length > 300) continue;
+        const category = ["decision", "learning", "fact", "preference", "note"].includes(m.category) ? m.category : "note";
+        const confidence = typeof m.confidence === "number" ? Math.max(0, Math.min(1, m.confidence)) : 0.7;
+        results.push({ content: m.content, category, confidence });
+      }
+      return results.slice(0, 8);
+    } catch {
+      if (modelsToTry.indexOf(model) < modelsToTry.length - 1) continue;
+      return [];
+    }
+  }
+  return [];
+}
+
+// src/worker/consolidator.ts
+function findDuplicates(memories) {
+  const pairs = [];
+  for (let i = 0; i < memories.length; i++) {
+    for (let j = i + 1; j < memories.length; j++) {
+      const wordsA = new Set(memories[i].content.toLowerCase().split(/\s+/).filter((w) => w.length > 3));
+      const wordsB = new Set(memories[j].content.toLowerCase().split(/\s+/).filter((w) => w.length > 3));
+      if (wordsA.size === 0 || wordsB.size === 0) continue;
+      const intersection = [...wordsA].filter((w) => wordsB.has(w)).length;
+      const similarity = intersection / Math.min(wordsA.size, wordsB.size);
+      if (similarity > 0.6) {
+        pairs.push([i, j]);
+      }
+    }
+  }
+  return pairs;
+}
+function isStale(memory, staleDays) {
+  const meta = memory.metadata;
+  if (!meta) return false;
+  const created = meta.created_at || meta.createdAt || meta.timestamp;
+  if (typeof created === "string") {
+    const age = Date.now() - new Date(created).getTime();
+    return age > staleDays * 24 * 60 * 60 * 1e3;
+  }
+  return false;
+}
+async function consolidateAgent(client, agentId, agentName, companyId, staleDays = 30) {
+  const result = {
+    agentId,
+    agentName,
+    memoriesBefore: 0,
+    duplicatesRemoved: 0,
+    staleArchived: 0,
+    errors: []
+  };
+  try {
+    const memories = await client.listMemories(agentId, companyId);
+    result.memoriesBefore = memories.length;
+    if (memories.length < 2) return result;
+    const duplicatePairs = findDuplicates(memories);
+    const toRemove = /* @__PURE__ */ new Set();
+    for (const [, j] of duplicatePairs) {
+      toRemove.add(j);
+    }
+    result.duplicatesRemoved = toRemove.size;
+    for (const mem of memories) {
+      if (isStale(mem, staleDays)) {
+        result.staleArchived++;
+      }
+    }
+  } catch (err) {
+    result.errors.push(String(err).substring(0, 200));
+  }
+  return result;
+}
+function findCrossAgentFacts(agentMemories, minAgents = 3) {
+  const factMap = /* @__PURE__ */ new Map();
+  for (const [agentId, memories] of agentMemories) {
+    for (const mem of memories) {
+      const key = mem.content.toLowerCase().replace(/\s+/g, " ").substring(0, 100);
+      if (!factMap.has(key)) factMap.set(key, /* @__PURE__ */ new Set());
+      factMap.get(key).add(agentId);
+    }
+  }
+  const crossAgentFacts = [];
+  for (const [content, agents] of factMap) {
+    if (agents.size >= minAgents) {
+      crossAgentFacts.push({ content, agents: [...agents] });
+    }
+  }
+  return crossAgentFacts;
+}
+
 // src/worker.ts
 var DEFAULT_CONFIG = {
   enabled: true,
@@ -227,7 +400,10 @@ var DEFAULT_CONFIG = {
   autoExtract: true,
   autoInject: true,
   maxMemoriesPerInjection: 5,
-  injectionTokenBudget: 800
+  injectionTokenBudget: 800,
+  extractionMode: "hybrid",
+  llmExtractionModel: "openai/gpt-4o-mini",
+  llmFallbackModel: "google/gemini-2.5-flash"
 };
 function statsKey(companyId) {
   return { scopeKind: "company", scopeId: companyId, stateKey: "memory-stats" };
@@ -266,6 +442,88 @@ var plugin = definePlugin({
       } catch {
       }
     }
+    ctx.tools.register(
+      "recall_memories",
+      {
+        displayName: "Recall Memories",
+        description: "Search for relevant context from previous runs stored in long-term memory.",
+        parametersSchema: {
+          type: "object",
+          properties: {
+            query: { type: "string", description: "What to search for" }
+          },
+          required: ["query"]
+        }
+      },
+      async (params, runCtx) => {
+        const { query } = params;
+        if (!query) return { content: "Error: query is required" };
+        const agentId = runCtx.agentId;
+        const companyId = runCtx.companyId;
+        try {
+          const results = await client.searchMemories(query, agentId, companyId, cfg.maxMemoriesPerInjection);
+          await bumpStats(companyId, agentId, "searches");
+          if (results.length === 0) {
+            return { content: "No relevant memories found." };
+          }
+          const formatted = results.slice(0, cfg.maxMemoriesPerInjection).map((m, i) => `${i + 1}. ${m.content.substring(0, 500)}`).join("\n\n");
+          await bumpStats(companyId, agentId, "injected", results.length);
+          ctx.logger.info("Recalled memories for agent", { agentId, query: query.substring(0, 80), count: results.length });
+          return {
+            content: `## Memories matching "${query.substring(0, 60)}"
+${formatted}`,
+            data: { count: results.length, agentId }
+          };
+        } catch (err) {
+          ctx.logger.warn("Memory recall failed", { error: String(err) });
+          return { content: `Memory search failed: ${String(err).substring(0, 200)}` };
+        }
+      }
+    );
+    ctx.tools.register(
+      "store_memory",
+      {
+        displayName: "Store Memory",
+        description: "Save an important learning, decision, or fact to long-term memory for future runs.",
+        parametersSchema: {
+          type: "object",
+          properties: {
+            content: { type: "string", description: "The memory to save" },
+            category: { type: "string", enum: ["decision", "learning", "fact", "preference", "note"] }
+          },
+          required: ["content"]
+        }
+      },
+      async (params, runCtx) => {
+        const { content, category } = params;
+        if (!content) return { content: "Error: content is required" };
+        const agentId = runCtx.agentId;
+        const companyId = runCtx.companyId;
+        try {
+          const agents = await ctx.agents.list({ companyId });
+          const agent = agents.find((a) => a.id === agentId);
+          const agentName = agent?.name || agentId;
+          await client.registerUser(agentId, agentName);
+          await client.storeMemory(content, {
+            agentId,
+            agentName,
+            companyId,
+            projectId: runCtx.projectId || void 0,
+            source: "agent_tool",
+            category: category || "note"
+          });
+          await bumpStats(companyId, agentId, "stored");
+          ctx.logger.info("Agent stored memory", { agentId, category, contentLen: content.length });
+          return {
+            content: `Memory saved: "${content.substring(0, 100)}"`,
+            data: { agentId, category: category || "note" }
+          };
+        } catch (err) {
+          ctx.logger.warn("Memory store failed", { error: String(err) });
+          return { content: `Failed to save memory: ${String(err).substring(0, 200)}` };
+        }
+      }
+    );
     ctx.events.on("agent.run.finished", async (event) => {
       const payload = event.payload;
       const summary = payload?.summary ?? payload?.lastMessage ?? "";
@@ -298,9 +556,38 @@ var plugin = definePlugin({
       }
       if (!cfg.enabled || !cfg.autoExtract) return;
       if (!summary || summary.length < 100 || !agentId) return;
-      ctx.logger.info("Extracting memories from run", { agentId, runId, summaryLen: summary.length });
+      ctx.logger.info("Extracting memories from run", { agentId, runId, summaryLen: summary.length, mode: cfg.extractionMode });
       await client.registerUser(agentId, agentName || agentId);
-      const extracted = extractMemories(summary);
+      let extracted = cfg.extractionMode === "llm" ? [] : extractMemories(summary);
+      if (cfg.extractionMode === "llm" || cfg.extractionMode === "hybrid" && extracted.length < 2 && summary.length > 500) {
+        const apiKey = process.env.OPENROUTER_API_KEY || "";
+        if (apiKey) {
+          const llmExtracted = await extractMemoriesWithLlm(summary, {
+            apiKey,
+            baseUrl: "https://openrouter.ai/api/v1",
+            model: cfg.llmExtractionModel,
+            fallbackModel: cfg.llmFallbackModel
+          });
+          if (llmExtracted.length > 0) {
+            ctx.logger.info("LLM extraction yielded memories", { count: llmExtracted.length, fallback: cfg.extractionMode === "hybrid" });
+            if (cfg.extractionMode === "hybrid" && extracted.length > 0) {
+              const existingKeys = new Set(extracted.map((m) => m.content.toLowerCase().substring(0, 60)));
+              for (const llmMem of llmExtracted) {
+                const key = llmMem.content.toLowerCase().substring(0, 60);
+                if (!existingKeys.has(key)) {
+                  extracted.push(llmMem);
+                  existingKeys.add(key);
+                }
+              }
+              extracted = extracted.slice(0, 8);
+            } else {
+              extracted = llmExtracted;
+            }
+          }
+        } else {
+          ctx.logger.debug("LLM extraction skipped \u2014 OPENROUTER_API_KEY not set");
+        }
+      }
       if (extracted.length === 0) {
         ctx.logger.debug("No memories extracted from run", { runId });
         return;
@@ -412,6 +699,50 @@ var plugin = definePlugin({
       await bumpStats(companyId, agentId, "stored");
       return { ok: true };
     });
+    ctx.actions.register("memory:update-config", async (params) => {
+      const updates = params.config;
+      if (!updates || typeof updates !== "object") {
+        return { ok: false, error: "Missing config object" };
+      }
+      const newCfg = { ...cfg, ...updates };
+      const port = process.env.PORT || "3100";
+      try {
+        const pluginId = params._pluginId || "";
+        const res = await fetch(`http://localhost:${port}/api/plugins/animusystems.agent-memory/config`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            configJson: {
+              enabled: newCfg.enabled,
+              memosUrl: newCfg.memosUrl,
+              autoExtract: newCfg.autoExtract,
+              autoInject: newCfg.autoInject,
+              maxMemoriesPerInjection: newCfg.maxMemoriesPerInjection,
+              injectionTokenBudget: newCfg.injectionTokenBudget,
+              extractionMode: newCfg.extractionMode,
+              llmExtractionModel: newCfg.llmExtractionModel
+            }
+          }),
+          signal: AbortSignal.timeout(5e3)
+        });
+        if (!res.ok) {
+          const text = await res.text().catch(() => "");
+          return { ok: false, error: `Config save failed (${res.status}): ${text.substring(0, 200)}` };
+        }
+        Object.assign(cfg, updates);
+        const companyId = params.companyId;
+        if (companyId) {
+          await ctx.state.set(
+            { scopeKind: "company", scopeId: companyId, stateKey: "memos-status" },
+            null
+          ).catch(() => {
+          });
+        }
+        return { ok: true, config: newCfg };
+      } catch (err) {
+        return { ok: false, error: String(err).substring(0, 200) };
+      }
+    });
     ctx.actions.register("memory:register-agent", async (params) => {
       const agentId = params.agentId;
       const agentName = params.agentName ?? agentId;
@@ -462,7 +793,9 @@ var plugin = definePlugin({
               autoExtract: cfg.autoExtract,
               autoInject: cfg.autoInject,
               maxMemoriesPerInjection: cfg.maxMemoriesPerInjection,
-              injectionTokenBudget: cfg.injectionTokenBudget
+              injectionTokenBudget: cfg.injectionTokenBudget,
+              extractionMode: cfg.extractionMode,
+              llmExtractionModel: cfg.llmExtractionModel
             }
           }
         );
@@ -477,6 +810,59 @@ var plugin = definePlugin({
           totalAgents: agents.length
         });
       }
+    });
+    ctx.jobs.register("autodream-consolidate", async () => {
+      let companyId = "";
+      try {
+        const stored = await ctx.state.get({ scopeKind: "instance", stateKey: "known-company-id" });
+        if (stored && typeof stored === "string") companyId = stored;
+      } catch {
+      }
+      if (!companyId) {
+        ctx.logger.debug("AutoDream: no company context yet");
+        return;
+      }
+      ctx.logger.info("AutoDream consolidation starting", { companyId });
+      const agents = await ctx.agents.list({ companyId });
+      const results = [];
+      const agentMemoriesMap = /* @__PURE__ */ new Map();
+      for (const agent of agents.slice(0, 30)) {
+        try {
+          const result = await consolidateAgent(client, agent.id, agent.name || agent.id, companyId);
+          results.push(result);
+          if (result.memoriesBefore > 0) {
+            const memories = await client.listMemories(agent.id, companyId);
+            agentMemoriesMap.set(agent.id, memories);
+          }
+        } catch (err) {
+          ctx.logger.warn("AutoDream: failed to consolidate agent", { agentId: agent.id, error: String(err) });
+        }
+      }
+      const crossFacts = findCrossAgentFacts(agentMemoriesMap, 3);
+      const totalDupes = results.reduce((s, r) => s + r.duplicatesRemoved, 0);
+      const totalStale = results.reduce((s, r) => s + r.staleArchived, 0);
+      await ctx.state.set(
+        { scopeKind: "company", scopeId: companyId, stateKey: "autodream-last-run" },
+        {
+          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+          agentsProcessed: results.length,
+          totalDuplicatesFound: totalDupes,
+          totalStaleFound: totalStale,
+          crossAgentFacts: crossFacts.length,
+          results: results.filter((r) => r.duplicatesRemoved > 0 || r.staleArchived > 0 || r.errors.length > 0)
+        }
+      );
+      await ctx.activity.log({
+        companyId,
+        message: `AutoDream: consolidated ${results.length} agents \u2014 ${totalDupes} duplicates, ${totalStale} stale, ${crossFacts.length} cross-agent facts`,
+        metadata: { totalDupes, totalStale, crossAgentFacts: crossFacts.length }
+      });
+      ctx.logger.info("AutoDream consolidation complete", {
+        agentsProcessed: results.length,
+        totalDupes,
+        totalStale,
+        crossAgentFacts: crossFacts.length
+      });
     });
     ctx.data.register("memory:status", async (params) => {
       const companyId = params.companyId;
@@ -521,7 +907,9 @@ var plugin = definePlugin({
           autoExtract: cfg.autoExtract,
           autoInject: cfg.autoInject,
           maxMemoriesPerInjection: cfg.maxMemoriesPerInjection,
-          injectionTokenBudget: cfg.injectionTokenBudget
+          injectionTokenBudget: cfg.injectionTokenBudget,
+          extractionMode: cfg.extractionMode,
+          llmExtractionModel: cfg.llmExtractionModel
         }
       };
       if (companyId) {

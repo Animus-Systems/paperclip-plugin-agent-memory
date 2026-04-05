@@ -121,6 +121,11 @@ const manifest: PaperclipPluginManifestV1 = {
         description: "OpenRouter model for LLM extraction (only used in llm/hybrid mode)",
         default: "openai/gpt-4o-mini",
       },
+      llmFallbackModel: {
+        type: "string",
+        title: "Fallback model (used when primary hits rate limits)",
+        default: "google/gemini-2.5-flash",
+      },
     },
   },
 

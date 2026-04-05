@@ -15,6 +15,7 @@ const DEFAULT_CONFIG: MemoryPluginConfig = {
   injectionTokenBudget: 800,
   extractionMode: "hybrid",
   llmExtractionModel: "openai/gpt-4o-mini",
+  llmFallbackModel: "google/gemini-2.5-flash",
 };
 
 function statsKey(companyId: string): ScopeKey {
@@ -225,6 +226,7 @@ const plugin = definePlugin({
             apiKey,
             baseUrl: "https://openrouter.ai/api/v1",
             model: cfg.llmExtractionModel,
+            fallbackModel: cfg.llmFallbackModel,
           });
           if (llmExtracted.length > 0) {
             ctx.logger.info("LLM extraction yielded memories", { count: llmExtracted.length, fallback: cfg.extractionMode === "hybrid" });

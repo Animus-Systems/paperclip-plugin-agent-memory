@@ -33,6 +33,7 @@ export interface LlmExtractorConfig {
   apiKey: string;
   baseUrl: string;
   model: string;
+  fallbackModel?: string;
 }
 
 /**
@@ -48,29 +49,38 @@ export async function extractMemoriesWithLlm(
 
   const truncatedSummary = summary.substring(0, MAX_SUMMARY_CHARS);
 
-  try {
-    const res = await fetch(`${config.baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${config.apiKey}`,
-        "HTTP-Referer": "https://paperclip.ing",
-        "X-Title": "Paperclip Memory Extraction",
-      },
-      body: JSON.stringify({
-        model: config.model,
-        messages: [
-          { role: "system", content: EXTRACTION_PROMPT },
-          { role: "user", content: `Extract memories from this agent run summary:\n\n${truncatedSummary}` },
-        ],
-        max_tokens: 1024,
-        temperature: 0.1,
-        response_format: { type: "json_object" },
-      }),
-      signal: AbortSignal.timeout(10_000),
-    });
+  const modelsToTry = [config.model];
+  if (config.fallbackModel && config.fallbackModel !== config.model) {
+    modelsToTry.push(config.fallbackModel);
+  }
 
-    if (!res.ok) return [];
+  for (const model of modelsToTry) {
+    try {
+      const res = await fetch(`${config.baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${config.apiKey}`,
+          "HTTP-Referer": "https://paperclip.ing",
+          "X-Title": "Paperclip Memory Extraction",
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: EXTRACTION_PROMPT },
+            { role: "user", content: `Extract memories from this agent run summary:\n\n${truncatedSummary}` },
+          ],
+          max_tokens: 1024,
+          temperature: 0.1,
+          response_format: { type: "json_object" },
+        }),
+        signal: AbortSignal.timeout(10_000),
+      });
+
+      if (!res.ok) {
+        if (res.status === 429 && modelsToTry.indexOf(model) < modelsToTry.length - 1) continue;
+        return [];
+      }
 
     const data = await res.json() as {
       choices?: Array<{ message?: { content?: string } }>;
@@ -123,7 +133,10 @@ export async function extractMemoriesWithLlm(
     }
 
     return results.slice(0, 8);
-  } catch {
-    return [];
+    } catch {
+      if (modelsToTry.indexOf(model) < modelsToTry.length - 1) continue;
+      return [];
+    }
   }
+  return [];
 }

@@ -363,16 +363,57 @@ var sectionTitle = {
   marginTop: 16
 };
 function MemorySettingsPage({ context }) {
-  const { data, isLoading } = usePluginData("memory:status", {
+  const { data, isLoading, refresh } = usePluginData("memory:status", {
     companyId: context.companyId
   });
-  if (isLoading) return /* @__PURE__ */ jsx("div", { style: { padding: "1.5rem", ...muted }, children: "Loading..." });
+  const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState("");
   const status = data ?? {
     memosConnected: false,
     memosUrl: "unknown",
     totalMemories: 0,
-    config: { autoExtract: true, autoInject: true, maxMemoriesPerInjection: 5, injectionTokenBudget: 800 }
+    config: { autoExtract: true, autoInject: true, maxMemoriesPerInjection: 5, injectionTokenBudget: 800, extractionMode: "hybrid", llmExtractionModel: "openai/gpt-4o-mini" }
   };
+  const [localConfig, setLocalConfig] = useState(null);
+  const cfg = { ...status.config, ...localConfig ?? {} };
+  const handleChange = (key, value) => {
+    setLocalConfig((prev) => ({ ...prev ?? {}, [key]: value }));
+    setSaveMsg("");
+  };
+  const handleSave = useCallback(async () => {
+    if (!localConfig) return;
+    setSaving(true);
+    setSaveMsg("");
+    try {
+      const fullConfig = {
+        enabled: cfg.enabled ?? true,
+        memosUrl: cfg.memosUrl ?? "http://memos:8000",
+        autoExtract: cfg.autoExtract,
+        autoInject: cfg.autoInject,
+        maxMemoriesPerInjection: cfg.maxMemoriesPerInjection,
+        injectionTokenBudget: cfg.injectionTokenBudget,
+        extractionMode: cfg.extractionMode,
+        llmExtractionModel: cfg.llmExtractionModel
+      };
+      const res = await fetch(`/api/plugins/animusystems.agent-memory/config`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ configJson: fullConfig })
+      });
+      if (res.ok) {
+        setSaveMsg("Saved");
+        setLocalConfig(null);
+        refresh();
+      } else {
+        const body = await res.text().catch(() => "");
+        setSaveMsg(`Save failed (${res.status}): ${body.substring(0, 100)}`);
+      }
+    } catch (err) {
+      setSaveMsg(String(err));
+    }
+    setSaving(false);
+  }, [localConfig, cfg, refresh]);
+  if (isLoading) return /* @__PURE__ */ jsx("div", { style: { padding: "1.5rem", ...muted }, children: "Loading..." });
   const dot = (on) => /* @__PURE__ */ jsx("span", { style: {
     display: "inline-block",
     width: 8,
@@ -381,11 +422,34 @@ function MemorySettingsPage({ context }) {
     background: on ? "rgb(34,197,94)" : "rgb(239,68,68)",
     marginRight: 6
   } });
-  const boolBadge = (val) => /* @__PURE__ */ jsx("span", { style: {
-    ...badge,
-    background: val ? "rgba(34,197,94,0.15)" : "rgba(239,68,68,0.15)",
-    color: val ? "rgb(134,239,172)" : "rgb(252,165,165)"
-  }, children: val ? "enabled" : "disabled" });
+  const selectStyle = {
+    padding: "5px 8px",
+    borderRadius: 4,
+    border: "1px solid rgba(255,255,255,0.15)",
+    background: "rgba(255,255,255,0.06)",
+    color: "#fff",
+    fontSize: "0.8rem",
+    fontFamily: "inherit",
+    outline: "none",
+    cursor: "pointer"
+  };
+  const inputStyle = {
+    ...selectStyle,
+    fontFamily: "monospace",
+    minWidth: 220,
+    textAlign: "right"
+  };
+  const toggleStyle = (on) => ({
+    padding: "4px 10px",
+    borderRadius: 4,
+    border: "none",
+    background: on ? "rgba(34,197,94,0.2)" : "rgba(239,68,68,0.15)",
+    color: on ? "rgb(134,239,172)" : "rgb(252,165,165)",
+    fontSize: "0.8rem",
+    fontWeight: 500,
+    cursor: "pointer"
+  });
+  const hasChanges = localConfig !== null && Object.keys(localConfig).length > 0;
   return /* @__PURE__ */ jsxs("div", { style: { padding: "1.5rem", maxWidth: 700 }, children: [
     /* @__PURE__ */ jsxs("div", { style: sectionTitle, children: [
       dot(status.memosConnected),
@@ -413,7 +477,7 @@ function MemorySettingsPage({ context }) {
       ] }),
       /* @__PURE__ */ jsxs("div", { style: configRow, children: [
         /* @__PURE__ */ jsx("span", { style: muted, children: "Chat LLM" }),
-        /* @__PURE__ */ jsx("span", { style: { color: "#fff" }, children: "OpenRouter \u2014 gpt-4o-mini" })
+        /* @__PURE__ */ jsx("span", { style: { color: "#fff" }, children: "OpenRouter \u2014 mistral-small-3.2-24b-instruct" })
       ] }),
       /* @__PURE__ */ jsxs("div", { style: configRow, children: [
         /* @__PURE__ */ jsx("span", { style: muted, children: "Vector DB" }),
@@ -439,25 +503,62 @@ function MemorySettingsPage({ context }) {
         ] })
       ] })
     ] }),
-    /* @__PURE__ */ jsx("div", { style: { fontSize: "0.75rem", color: "rgba(255,255,255,0.3)", marginTop: 4, lineHeight: 1.4 }, children: "MemOS consolidates run outputs into evolving knowledge objects (skills, procedures, preferences). One object may contain data from many runs \u2014 it gets richer over time, not duplicated." }),
     /* @__PURE__ */ jsx("div", { style: sectionTitle, children: "Plugin Configuration" }),
     /* @__PURE__ */ jsxs("div", { style: card, children: [
       /* @__PURE__ */ jsxs("div", { style: configRow, children: [
         /* @__PURE__ */ jsx("span", { style: muted, children: "Auto-extract" }),
-        boolBadge(status.config.autoExtract)
+        /* @__PURE__ */ jsx("button", { style: toggleStyle(cfg.autoExtract), onClick: () => handleChange("autoExtract", !cfg.autoExtract), children: cfg.autoExtract ? "enabled" : "disabled" })
       ] }),
       /* @__PURE__ */ jsxs("div", { style: configRow, children: [
         /* @__PURE__ */ jsx("span", { style: muted, children: "Auto-inject" }),
-        boolBadge(status.config.autoInject)
+        /* @__PURE__ */ jsx("button", { style: toggleStyle(cfg.autoInject), onClick: () => handleChange("autoInject", !cfg.autoInject), children: cfg.autoInject ? "enabled" : "disabled" })
       ] }),
       /* @__PURE__ */ jsxs("div", { style: configRow, children: [
-        /* @__PURE__ */ jsx("span", { style: muted, children: "Max per injection" }),
-        /* @__PURE__ */ jsx("span", { style: { color: "#fff" }, children: status.config.maxMemoriesPerInjection })
+        /* @__PURE__ */ jsx("span", { style: muted, children: "Extraction mode" }),
+        /* @__PURE__ */ jsxs("select", { style: selectStyle, value: cfg.extractionMode, onChange: (e) => handleChange("extractionMode", e.target.value), children: [
+          /* @__PURE__ */ jsx("option", { value: "rule_based", children: "Rule-based (free)" }),
+          /* @__PURE__ */ jsx("option", { value: "hybrid", children: "Hybrid (rule + LLM fallback)" }),
+          /* @__PURE__ */ jsx("option", { value: "llm", children: "LLM only" })
+        ] })
+      ] }),
+      /* @__PURE__ */ jsxs("div", { style: configRow, children: [
+        /* @__PURE__ */ jsx("span", { style: muted, children: "LLM extraction model" }),
+        /* @__PURE__ */ jsx("input", { style: inputStyle, value: cfg.llmExtractionModel, onChange: (e) => handleChange("llmExtractionModel", e.target.value), placeholder: "openai/gpt-4o-mini" })
+      ] }),
+      /* @__PURE__ */ jsxs("div", { style: configRow, children: [
+        /* @__PURE__ */ jsx("span", { style: muted, children: "Max memories per injection" }),
+        /* @__PURE__ */ jsx("input", { style: { ...selectStyle, width: 80, textAlign: "center" }, type: "number", min: 1, max: 20, value: cfg.maxMemoriesPerInjection, onChange: (e) => handleChange("maxMemoriesPerInjection", parseInt(e.target.value) || 5) })
       ] }),
       /* @__PURE__ */ jsxs("div", { style: { ...configRow, borderBottom: "none" }, children: [
         /* @__PURE__ */ jsx("span", { style: muted, children: "Token budget" }),
-        /* @__PURE__ */ jsx("span", { style: { color: "#fff" }, children: status.config.injectionTokenBudget })
+        /* @__PURE__ */ jsx("input", { style: { ...selectStyle, width: 100, textAlign: "center" }, type: "number", min: 100, max: 5e3, step: 100, value: cfg.injectionTokenBudget, onChange: (e) => handleChange("injectionTokenBudget", parseInt(e.target.value) || 800) })
       ] })
+    ] }),
+    hasChanges && /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10, marginTop: 12 }, children: [
+      /* @__PURE__ */ jsx("button", { onClick: handleSave, disabled: saving, style: {
+        padding: "8px 20px",
+        borderRadius: 6,
+        border: "none",
+        background: "rgba(99,102,241,0.3)",
+        color: "rgb(165,168,255)",
+        fontSize: "0.85rem",
+        fontWeight: 500,
+        cursor: saving ? "wait" : "pointer",
+        opacity: saving ? 0.6 : 1
+      }, children: saving ? "Saving..." : "Save Changes" }),
+      /* @__PURE__ */ jsx("button", { onClick: () => {
+        setLocalConfig(null);
+        setSaveMsg("");
+      }, style: {
+        padding: "8px 14px",
+        borderRadius: 6,
+        border: "1px solid rgba(255,255,255,0.1)",
+        background: "transparent",
+        color: "rgba(255,255,255,0.5)",
+        fontSize: "0.8rem",
+        cursor: "pointer"
+      }, children: "Cancel" }),
+      saveMsg && /* @__PURE__ */ jsx("span", { style: { fontSize: "0.8rem", color: saveMsg === "Saved" ? "rgb(134,239,172)" : "rgb(252,165,165)" }, children: saveMsg })
     ] })
   ] });
 }

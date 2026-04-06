@@ -462,7 +462,7 @@ const plugin = definePlugin({
                 // All subtasks complete — generate executive brief
                 ctx.logger.info("KB: generating executive brief for synthesis", { issueId, subtasks: children.length });
 
-                const apiKey = process.env.OPENROUTER_API_KEY || "";
+                const apiKey = process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY || "";
                 if (apiKey) {
                   // Collect subtask outputs
                   const subtaskOutputs: Array<{ identifier: string; title: string; content: string }> = [];
@@ -592,7 +592,7 @@ const plugin = definePlugin({
 
       if (cfg.extractionMode === "llm" || (cfg.extractionMode === "hybrid" && extracted.length < 2 && summary.length > 500)) {
         // LLM extraction — either primary or fallback
-        const apiKey = process.env.OPENROUTER_API_KEY || "";
+        const apiKey = process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY || "";
         if (apiKey) {
           const llmExtracted = await extractMemoriesWithLlm(summary, {
             apiKey,
@@ -839,8 +839,8 @@ const plugin = definePlugin({
       const issueId = params.issueId as string;
       if (!companyId || !issueId) return { ok: false, error: "companyId and issueId required" };
 
-      const apiKey = process.env.OPENROUTER_API_KEY || "";
-      if (!apiKey) return { ok: false, error: "OPENROUTER_API_KEY not set" };
+      const apiKey = process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY || "";
+      if (!apiKey) return { ok: false, error: "OPENROUTER_API_KEY / OPENAI_API_KEY not set" };
 
       const port = process.env.PORT || "3100";
       const headers: Record<string, string> = { "Content-Type": "application/json" };

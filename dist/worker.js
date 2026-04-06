@@ -1030,7 +1030,7 @@ ${issue.description.substring(0, 1e3)}` : "",
               const children = await childrenRes.json();
               if (children.length > 0 && children.every((c) => c.status === "done" || c.status === "cancelled")) {
                 ctx.logger.info("KB: generating executive brief for synthesis", { issueId, subtasks: children.length });
-                const apiKey = process.env.OPENROUTER_API_KEY || "";
+                const apiKey = process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY || "";
                 if (apiKey) {
                   const subtaskOutputs = [];
                   for (const child of children.filter((c) => c.status === "done")) {
@@ -1139,7 +1139,7 @@ ${issue.description.substring(0, 1e3)}` : "",
       await client.registerUser(agentId, agentName || agentId);
       let extracted = cfg.extractionMode === "llm" ? [] : extractMemories(summary);
       if (cfg.extractionMode === "llm" || cfg.extractionMode === "hybrid" && extracted.length < 2 && summary.length > 500) {
-        const apiKey = process.env.OPENROUTER_API_KEY || "";
+        const apiKey = process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY || "";
         if (apiKey) {
           const llmExtracted = await extractMemoriesWithLlm(summary, {
             apiKey,
@@ -1336,8 +1336,8 @@ ${issue.description.substring(0, 1e3)}` : "",
       const companyId = params.companyId;
       const issueId = params.issueId;
       if (!companyId || !issueId) return { ok: false, error: "companyId and issueId required" };
-      const apiKey = process.env.OPENROUTER_API_KEY || "";
-      if (!apiKey) return { ok: false, error: "OPENROUTER_API_KEY not set" };
+      const apiKey = process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY || "";
+      if (!apiKey) return { ok: false, error: "OPENROUTER_API_KEY / OPENAI_API_KEY not set" };
       const port = process.env.PORT || "3100";
       const headers = { "Content-Type": "application/json" };
       const issueRes = await fetch(`http://localhost:${port}/api/issues/${issueId}`, {

@@ -963,19 +963,13 @@ ${formatted}`,
       if (!issueId || !companyId) return;
       ctx.logger.info("KB: indexing completed issue", { issueId, identifier });
       try {
-        const port = process.env.PORT || "3100";
-        const headers = { "Content-Type": "application/json" };
-        const issueRes = await fetch(`http://localhost:${port}/api/issues/${issueId}`, {
-          headers,
-          signal: AbortSignal.timeout(5e3)
-        });
-        if (!issueRes.ok) return;
-        const issue = await issueRes.json();
-        const commentsRes = await fetch(`http://localhost:${port}/api/issues/${issueId}/comments`, {
-          headers,
-          signal: AbortSignal.timeout(5e3)
-        });
-        const comments = commentsRes.ok ? await commentsRes.json() : [];
+        const issue = await ctx.issues.get({ issueId, companyId });
+        if (!issue) return;
+        let comments = [];
+        try {
+          comments = await ctx.issues.listComments({ issueId });
+        } catch {
+        }
         let agentName = "";
         if (issue.assigneeAgentId) {
           try {
@@ -1334,45 +1328,44 @@ ${issue.description.substring(0, 1e3)}` : "",
     });
     ctx.actions.register("kb:generate-brief", async (params) => {
       const companyId = params.companyId;
-      const issueId = params.issueId;
-      if (!companyId || !issueId) return { ok: false, error: "companyId and issueId required" };
+      const issueIdOrIdentifier = params.issueId;
+      if (!companyId || !issueIdOrIdentifier) return { ok: false, error: "companyId and issueId required" };
       const apiKey = process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY || "";
-      if (!apiKey) return { ok: false, error: "OPENROUTER_API_KEY / OPENAI_API_KEY not set" };
-      const port = process.env.PORT || "3100";
-      const headers = { "Content-Type": "application/json" };
-      const issueRes = await fetch(`http://localhost:${port}/api/issues/${issueId}`, {
-        headers,
-        signal: AbortSignal.timeout(5e3)
-      });
-      if (!issueRes.ok) return { ok: false, error: "Issue not found" };
-      const issue = await issueRes.json();
-      const childrenRes = await fetch(
-        `http://localhost:${port}/api/companies/${companyId}/issues?parentId=${issueId}`,
-        { headers, signal: AbortSignal.timeout(5e3) }
-      );
-      const children = childrenRes.ok ? await childrenRes.json() : [];
+      if (!apiKey) return { ok: false, error: "API key not available" };
+      let issue = null;
+      try {
+        const allIssues = await ctx.issues.list({ companyId });
+        issue = allIssues.find(
+          (i) => i.identifier === issueIdOrIdentifier || i.id === issueIdOrIdentifier
+        ) ?? null;
+      } catch {
+      }
+      if (!issue) return { ok: false, error: `Issue "${issueIdOrIdentifier}" not found` };
+      const issueId = issue.id;
+      let children = [];
+      try {
+        children = await ctx.issues.list({ companyId, parentId: issueId });
+      } catch {
+      }
       const subtaskOutputs = [];
       for (const child of children.filter((c) => c.status === "done")) {
-        const childCommentsRes = await fetch(
-          `http://localhost:${port}/api/issues/${child.id}/comments`,
-          { headers, signal: AbortSignal.timeout(5e3) }
-        );
-        if (childCommentsRes.ok) {
-          const childComments = await childCommentsRes.json();
-          const lastAgentComment = childComments.filter((c) => c.authorAgentId).pop();
+        try {
+          const comments = await ctx.issues.listComments({ issueId: child.id });
+          const lastAgentComment = comments.filter((c) => c.authorAgentId).pop();
           subtaskOutputs.push({
             identifier: child.identifier || child.id.substring(0, 8),
             title: child.title || "Untitled",
-            content: lastAgentComment?.body.substring(0, 3e3) || "(no output)"
+            content: (lastAgentComment?.body ?? "(no output)").substring(0, 3e3)
           });
+        } catch {
         }
       }
       if (subtaskOutputs.length === 0) {
-        const commentsRes = await fetch(`http://localhost:${port}/api/issues/${issueId}/comments`, {
-          headers,
-          signal: AbortSignal.timeout(5e3)
-        });
-        const comments = commentsRes.ok ? await commentsRes.json() : [];
+        let comments = [];
+        try {
+          comments = await ctx.issues.listComments({ issueId });
+        } catch {
+        }
         const agentComments = comments.filter((c) => c.authorAgentId && c.body.length > 50);
         if (agentComments.length === 0) return { ok: false, error: "No agent output to summarize" };
         subtaskOutputs.push({
@@ -1439,10 +1432,10 @@ ${issue.description.substring(0, 1e3)}` : "",
         return { ok: false, error: "Missing config object" };
       }
       const newCfg = { ...cfg, ...updates };
-      const port = process.env.PORT || "3100";
+      const port2 = process.env.PORT || "3100";
       try {
         const pluginId = params._pluginId || "";
-        const res = await fetch(`http://localhost:${port}/api/plugins/animusystems.agent-memory/config`, {
+        const res = await fetch(`http://localhost:${port2}/api/plugins/animusystems.agent-memory/config`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({

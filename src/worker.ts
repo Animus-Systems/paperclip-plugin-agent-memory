@@ -371,25 +371,14 @@ const plugin = definePlugin({
       ctx.logger.info("KB: indexing completed issue", { issueId, identifier });
 
       try {
-        // Fetch issue details + comments via internal API
-        const port = process.env.PORT || "3100";
-        const headers: Record<string, string> = { "Content-Type": "application/json" };
+        // Fetch issue details + comments via SDK
+        const issue = await ctx.issues.get({ issueId, companyId } as Record<string, unknown>) as Record<string, unknown> | null;
+        if (!issue) return;
 
-        const issueRes = await fetch(`http://localhost:${port}/api/issues/${issueId}`, {
-          headers, signal: AbortSignal.timeout(5000),
-        });
-        if (!issueRes.ok) return;
-        const issue = await issueRes.json() as {
-          id: string; identifier?: string; title?: string; description?: string;
-          assigneeAgentId?: string; projectId?: string; parentId?: string;
-        };
-
-        const commentsRes = await fetch(`http://localhost:${port}/api/issues/${issueId}/comments`, {
-          headers, signal: AbortSignal.timeout(5000),
-        });
-        const comments = commentsRes.ok
-          ? await commentsRes.json() as Array<{ body: string; authorAgentId?: string }>
-          : [];
+        let comments: Array<Record<string, unknown>> = [];
+        try {
+          comments = (await ctx.issues.listComments({ issueId } as Record<string, unknown>)) as Array<Record<string, unknown>>;
+        } catch { /* */ }
 
         // Get agent name
         let agentName = "";
@@ -402,10 +391,10 @@ const plugin = definePlugin({
 
         // Build KB content from final comments (last 3 substantive agent comments)
         const agentComments = comments
-          .filter((c) => c.authorAgentId && c.body.length > 100)
+          .filter((c) => c.authorAgentId && (c.body as string).length > 100)
           .slice(-3);
 
-        if (agentComments.length === 0 && (!issue.description || issue.description.length < 50)) {
+        if (agentComments.length === 0 && (!issue.description || (issue.description as string).length < 50)) {
           ctx.logger.debug("KB: no substantial content to index", { issueId });
           return;
         }
@@ -413,19 +402,19 @@ const plugin = definePlugin({
         const content = [
           `# ${issue.identifier || issueId}: ${issue.title || "Untitled"}`,
           "",
-          issue.description ? `## Task Description\n${issue.description.substring(0, 1000)}` : "",
+          issue.description ? `## Task Description\n${(issue.description as string).substring(0, 1000)}` : "",
           "",
-          ...agentComments.map((c) => c.body.substring(0, 2000)),
+          ...agentComments.map((c) => (c.body as string).substring(0, 2000)),
         ].filter(Boolean).join("\n\n");
 
         await client.storeKnowledgeEntry(content, {
           companyId,
           title: `${issue.identifier || ""} ${issue.title || ""}`.trim(),
           source: "issue_completion",
-          issueId: issue.id,
-          issueIdentifier: issue.identifier,
-          projectId: issue.projectId,
-          agentId: issue.assigneeAgentId,
+          issueId: issue.id as string,
+          issueIdentifier: issue.identifier as string,
+          projectId: issue.projectId as string,
+          agentId: issue.assigneeAgentId as string,
           agentName,
         });
 
@@ -836,62 +825,56 @@ const plugin = definePlugin({
     /** Generate executive brief for an issue. */
     ctx.actions.register("kb:generate-brief", async (params: Record<string, unknown>) => {
       const companyId = params.companyId as string;
-      const issueId = params.issueId as string;
-      if (!companyId || !issueId) return { ok: false, error: "companyId and issueId required" };
+      const issueIdOrIdentifier = params.issueId as string;
+      if (!companyId || !issueIdOrIdentifier) return { ok: false, error: "companyId and issueId required" };
 
       const apiKey = process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY || "";
-      if (!apiKey) return { ok: false, error: "OPENROUTER_API_KEY / OPENAI_API_KEY not set" };
+      if (!apiKey) return { ok: false, error: "API key not available" };
 
-      const port = process.env.PORT || "3100";
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      // Resolve identifier (ANI-123) to UUID if needed
+      let issue: Record<string, unknown> | null = null;
+      try {
+        // Try as identifier first, then as UUID
+        const allIssues = await ctx.issues.list({ companyId } as Record<string, unknown>);
+        issue = (allIssues as Array<Record<string, unknown>>).find(
+          (i) => i.identifier === issueIdOrIdentifier || i.id === issueIdOrIdentifier
+        ) as Record<string, unknown> | undefined ?? null;
+      } catch { /* */ }
+      if (!issue) return { ok: false, error: `Issue "${issueIdOrIdentifier}" not found` };
 
-      const issueRes = await fetch(`http://localhost:${port}/api/issues/${issueId}`, {
-        headers, signal: AbortSignal.timeout(5000),
-      });
-      if (!issueRes.ok) return { ok: false, error: "Issue not found" };
-      const issue = await issueRes.json() as {
-        id: string; identifier?: string; title?: string; projectId?: string; assigneeAgentId?: string;
-      };
+      const issueId = issue.id as string;
 
-      const childrenRes = await fetch(
-        `http://localhost:${port}/api/companies/${companyId}/issues?parentId=${issueId}`,
-        { headers, signal: AbortSignal.timeout(5000) },
-      );
-      const children = childrenRes.ok
-        ? await childrenRes.json() as Array<{ id: string; identifier?: string; title?: string; status?: string }>
-        : [];
+      // Check for subtasks
+      let children: Array<Record<string, unknown>> = [];
+      try {
+        children = (await ctx.issues.list({ companyId, parentId: issueId } as Record<string, unknown>)) as Array<Record<string, unknown>>;
+      } catch { /* */ }
 
       const subtaskOutputs: Array<{ identifier: string; title: string; content: string }> = [];
       for (const child of children.filter((c) => c.status === "done")) {
-        const childCommentsRes = await fetch(
-          `http://localhost:${port}/api/issues/${child.id}/comments`,
-          { headers, signal: AbortSignal.timeout(5000) },
-        );
-        if (childCommentsRes.ok) {
-          const childComments = await childCommentsRes.json() as Array<{ body: string; authorAgentId?: string }>;
-          const lastAgentComment = childComments.filter((c) => c.authorAgentId).pop();
+        try {
+          const comments = await ctx.issues.listComments({ issueId: child.id as string } as Record<string, unknown>) as Array<Record<string, unknown>>;
+          const lastAgentComment = comments.filter((c) => c.authorAgentId).pop();
           subtaskOutputs.push({
-            identifier: child.identifier || child.id.substring(0, 8),
-            title: child.title || "Untitled",
-            content: lastAgentComment?.body.substring(0, 3000) || "(no output)",
+            identifier: (child.identifier || (child.id as string).substring(0, 8)) as string,
+            title: (child.title || "Untitled") as string,
+            content: ((lastAgentComment?.body as string) ?? "(no output)").substring(0, 3000),
           });
-        }
+        } catch { /* skip */ }
       }
 
       if (subtaskOutputs.length === 0) {
         // No subtasks — generate brief from issue comments directly
-        const commentsRes = await fetch(`http://localhost:${port}/api/issues/${issueId}/comments`, {
-          headers, signal: AbortSignal.timeout(5000),
-        });
-        const comments = commentsRes.ok
-          ? await commentsRes.json() as Array<{ body: string; authorAgentId?: string }>
-          : [];
-        const agentComments = comments.filter((c) => c.authorAgentId && c.body.length > 50);
+        let comments: Array<Record<string, unknown>> = [];
+        try {
+          comments = (await ctx.issues.listComments({ issueId } as Record<string, unknown>)) as Array<Record<string, unknown>>;
+        } catch { /* */ }
+        const agentComments = comments.filter((c) => c.authorAgentId && (c.body as string).length > 50);
         if (agentComments.length === 0) return { ok: false, error: "No agent output to summarize" };
         subtaskOutputs.push({
-          identifier: issue.identifier || issueId.substring(0, 8),
-          title: issue.title || "Untitled",
-          content: agentComments.map((c) => c.body.substring(0, 2000)).join("\n\n"),
+          identifier: (issue.identifier || issueId.substring(0, 8)) as string,
+          title: (issue.title || "Untitled") as string,
+          content: agentComments.map((c) => (c.body as string).substring(0, 2000)).join("\n\n"),
         });
       }
 

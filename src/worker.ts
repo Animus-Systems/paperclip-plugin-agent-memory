@@ -831,14 +831,10 @@ const plugin = definePlugin({
       const apiKey = process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY || "";
       if (!apiKey) return { ok: false, error: "API key not available" };
 
-      // Resolve identifier (ANI-123) to UUID if needed
+      // Resolve — SDK's issues.get supports both UUID and identifier (ANI-123)
       let issue: Record<string, unknown> | null = null;
       try {
-        // Try as identifier first, then as UUID
-        const allIssues = await ctx.issues.list({ companyId } as Record<string, unknown>);
-        issue = (allIssues as Array<Record<string, unknown>>).find(
-          (i) => i.identifier === issueIdOrIdentifier || i.id === issueIdOrIdentifier
-        ) as Record<string, unknown> | undefined ?? null;
+        issue = (await ctx.issues.get({ issueId: issueIdOrIdentifier, companyId } as Record<string, unknown>)) as Record<string, unknown> | null;
       } catch { /* */ }
       if (!issue) return { ok: false, error: `Issue "${issueIdOrIdentifier}" not found` };
 

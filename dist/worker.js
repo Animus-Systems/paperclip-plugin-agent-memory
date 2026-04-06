@@ -1334,10 +1334,7 @@ ${issue.description.substring(0, 1e3)}` : "",
       if (!apiKey) return { ok: false, error: "API key not available" };
       let issue = null;
       try {
-        const allIssues = await ctx.issues.list({ companyId });
-        issue = allIssues.find(
-          (i) => i.identifier === issueIdOrIdentifier || i.id === issueIdOrIdentifier
-        ) ?? null;
+        issue = await ctx.issues.get({ issueId: issueIdOrIdentifier, companyId });
       } catch {
       }
       if (!issue) return { ok: false, error: `Issue "${issueIdOrIdentifier}" not found` };

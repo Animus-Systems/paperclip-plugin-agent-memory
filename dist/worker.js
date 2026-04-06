@@ -1347,47 +1347,47 @@ ${issue.description.substring(0, 1e3)}` : "",
       if (!companyId || !issueIdOrIdentifier) return { ok: false, error: "companyId and issueId required" };
       const apiKey = process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY || "";
       if (!apiKey) return { ok: false, error: "API key not available" };
+      const port2 = process.env.PORT || "3100";
+      const hdr = { "Content-Type": "application/json" };
       let issue = null;
       try {
-        issue = await ctx.issues.get(issueIdOrIdentifier, companyId);
+        const r = await fetch(`http://localhost:${port2}/api/issues/${encodeURIComponent(issueIdOrIdentifier)}`, { headers: hdr, signal: AbortSignal.timeout(5e3) });
+        if (r.ok) issue = await r.json();
       } catch {
       }
       if (!issue) return { ok: false, error: `Issue "${issueIdOrIdentifier}" not found` };
       const issueId = issue.id;
       let children = [];
       try {
-        children = await ctx.issues.list({ companyId, parentId: issueId });
+        const r = await fetch(`http://localhost:${port2}/api/companies/${companyId}/issues?parentId=${issueId}`, { headers: hdr, signal: AbortSignal.timeout(5e3) });
+        if (r.ok) children = await r.json();
       } catch {
       }
       const subtaskOutputs = [];
       for (const child of children.filter((c) => c.status === "done")) {
         try {
-          const comments = await ctx.issues.listComments(child.id, companyId);
-          const lastAgentComment = comments.filter((c) => c.authorAgentId).pop();
-          subtaskOutputs.push({
-            identifier: child.identifier || child.id.substring(0, 8),
-            title: child.title || "Untitled",
-            content: (lastAgentComment?.body ?? "(no output)").substring(0, 3e3)
-          });
+          const r = await fetch(`http://localhost:${port2}/api/issues/${child.id}/comments`, { headers: hdr, signal: AbortSignal.timeout(5e3) });
+          if (r.ok) {
+            const comments = await r.json();
+            const lastAgentComment = comments.filter((c) => c.authorAgentId).pop();
+            subtaskOutputs.push({
+              identifier: child.identifier || child.id.substring(0, 8),
+              title: child.title || "Untitled",
+              content: (lastAgentComment?.body ?? "(no output)").substring(0, 3e3)
+            });
+          }
         } catch {
         }
       }
       if (subtaskOutputs.length === 0) {
         let comments = [];
         try {
-          const raw = await ctx.issues.listComments(issueId, companyId);
-          comments = Array.isArray(raw) ? raw : [];
-          ctx.logger.info("KB brief: listComments OK", { issueId, count: comments.length });
-          if (comments.length > 0) {
-            ctx.logger.info("KB brief: comment sample", { keys: Object.keys(comments[0]) });
-          }
-        } catch (err) {
-          const errMsg = err instanceof Error ? `${err.message}
-${err.stack}` : JSON.stringify(err);
-          ctx.logger.error("KB brief: listComments FAILED", { issueId, error: errMsg.substring(0, 500) });
+          const r = await fetch(`http://localhost:${port2}/api/issues/${issueId}/comments`, { headers: hdr, signal: AbortSignal.timeout(5e3) });
+          if (r.ok) comments = await r.json();
+        } catch {
         }
-        const agentComments = comments.filter((c) => (c.authorAgentId || c.author_agent_id) && String(c.body ?? "").length > 50);
-        if (agentComments.length === 0) return { ok: false, error: `No agent output to summarize (${comments.length} comments found, none from agents)` };
+        const agentComments = comments.filter((c) => c.authorAgentId && String(c.body ?? "").length > 50);
+        if (agentComments.length === 0) return { ok: false, error: `No agent output (${comments.length} comments, none from agents)` };
         subtaskOutputs.push({
           identifier: issue.identifier || issueId.substring(0, 8),
           title: issue.title || "Untitled",

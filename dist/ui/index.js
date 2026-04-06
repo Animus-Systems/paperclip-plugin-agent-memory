@@ -404,7 +404,8 @@ function MemorySettingsPage({ context }) {
         llmFallbackModel: cfg.llmFallbackModel,
         kbAutoIndex: cfg.kbAutoIndex ?? true,
         kbAutoBreif: cfg.kbAutoBreif ?? true,
-        kbBriefModel: cfg.kbBriefModel ?? "deepseek/deepseek-v3.2"
+        kbBriefModel: cfg.kbBriefModel ?? "deepseek/deepseek-v3.2",
+        kbWatchFolders: cfg.kbWatchFolders ?? []
       };
       const res = await fetch(`/api/plugins/animusystems.agent-memory/config`, {
         method: "POST",
@@ -559,11 +560,68 @@ function MemorySettingsPage({ context }) {
         /* @__PURE__ */ jsx("span", { style: muted, children: "Auto-generate executive briefs" }),
         /* @__PURE__ */ jsx("button", { style: toggleStyle(cfg.kbAutoBreif ?? true), onClick: () => handleChange("kbAutoBreif", !(cfg.kbAutoBreif ?? true)), children: cfg.kbAutoBreif ?? true ? "enabled" : "disabled" })
       ] }),
-      /* @__PURE__ */ jsxs("div", { style: { ...configRow, borderBottom: "none" }, children: [
+      /* @__PURE__ */ jsxs("div", { style: configRow, children: [
         /* @__PURE__ */ jsx("span", { style: muted, children: "Brief generation model" }),
         /* @__PURE__ */ jsx("input", { style: inputStyle, value: String(cfg.kbBriefModel ?? "deepseek/deepseek-v3.2"), onChange: (e) => handleChange("kbBriefModel", e.target.value) })
+      ] }),
+      /* @__PURE__ */ jsxs("div", { style: { ...configRow, borderBottom: "none", flexDirection: "column", alignItems: "stretch", gap: 6 }, children: [
+        /* @__PURE__ */ jsx("span", { style: muted, children: "Watch folders (one per line \u2014 indexed every 6 hours)" }),
+        /* @__PURE__ */ jsx(
+          "textarea",
+          {
+            style: { ...inputStyle, textAlign: "left", minHeight: 60, fontFamily: "monospace", fontSize: "0.75rem", resize: "vertical" },
+            value: (cfg.kbWatchFolders ?? []).join("\n"),
+            onChange: (e) => handleChange("kbWatchFolders", e.target.value.split("\n").map((s) => s.trim()).filter(Boolean)),
+            placeholder: "/data/accounts/Animus-Systems-SL\n/data/github/animusystems"
+          }
+        )
       ] })
     ] }),
+    /* @__PURE__ */ jsx("div", { style: sectionTitle, children: "Index Folder" }),
+    /* @__PURE__ */ jsx("div", { style: card, children: /* @__PURE__ */ jsxs("div", { style: { ...configRow, borderBottom: "none", gap: 8 }, children: [
+      /* @__PURE__ */ jsx(
+        "input",
+        {
+          style: { ...inputStyle, flex: 1, textAlign: "left" },
+          placeholder: "/data/accounts/Animus-Systems-SL",
+          id: "kb-folder-path"
+        }
+      ),
+      /* @__PURE__ */ jsx(
+        "button",
+        {
+          onClick: async () => {
+            const input = document.getElementById("kb-folder-path");
+            const path = input?.value?.trim();
+            if (!path) return;
+            input.disabled = true;
+            try {
+              const res = await fetch(`/api/plugins/animusystems.agent-memory/actions/kb:index-folder`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ companyId: context.companyId, path, recursive: true })
+              }).then((r) => r.json());
+              alert(res.ok ? `Indexed ${res.indexed} files (${res.skipped} skipped, ${res.errors} errors)` : `Error: ${res.error}`);
+            } catch (err) {
+              alert(`Failed: ${err}`);
+            }
+            input.disabled = false;
+          },
+          style: {
+            padding: "6px 14px",
+            borderRadius: 5,
+            border: "none",
+            background: "rgba(59,130,246,0.25)",
+            color: "rgb(147,197,253)",
+            fontSize: "0.8rem",
+            fontWeight: 500,
+            cursor: "pointer",
+            whiteSpace: "nowrap"
+          },
+          children: "Index Now"
+        }
+      )
+    ] }) }),
     hasChanges && /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10, marginTop: 12 }, children: [
       /* @__PURE__ */ jsx("button", { onClick: handleSave, disabled: saving, style: {
         padding: "8px 20px",

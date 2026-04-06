@@ -46,6 +46,27 @@ const manifest: PaperclipPluginManifestV1 = {
       },
     },
     {
+      name: "index_folder",
+      displayName: "Index Folder",
+      description:
+        "Index all documents in a folder into the Knowledge Base. " +
+        "Supports PDF, DOCX, XLSX, CSV, markdown, HTML, text files.",
+      parametersSchema: {
+        type: "object",
+        properties: {
+          path: {
+            type: "string",
+            description: "Absolute folder path to index",
+          },
+          recursive: {
+            type: "boolean",
+            description: "Include subfolders (default: true)",
+          },
+        },
+        required: ["path"],
+      },
+    },
+    {
       name: "search_knowledge",
       displayName: "Search Knowledge Base",
       description:
@@ -161,6 +182,13 @@ const manifest: PaperclipPluginManifestV1 = {
         description: "OpenRouter model for compiling executive briefs",
         default: "deepseek/deepseek-v3.2",
       },
+      kbWatchFolders: {
+        type: "array",
+        title: "Watch Folders",
+        description: "Folder paths to periodically scan and index (e.g. /data/accounts/Animus-Systems-SL)",
+        items: { type: "string" },
+        default: [],
+      },
     },
   },
 
@@ -212,6 +240,12 @@ const manifest: PaperclipPluginManifestV1 = {
       displayName: "AutoDream Consolidation",
       description: "Daily memory consolidation — deduplicates, prunes stale memories, promotes cross-agent facts",
       schedule: "0 3 * * *",
+    },
+    {
+      jobKey: "kb-folder-watch",
+      displayName: "KB Folder Watch",
+      description: "Periodically re-indexes configured watch folders for new/changed documents",
+      schedule: "0 */6 * * *",
     },
   ],
 };

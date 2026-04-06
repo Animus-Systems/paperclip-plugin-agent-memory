@@ -47,6 +47,7 @@ export interface MemoryPluginConfig {
   kbAutoIndex: boolean;
   kbAutoBreif: boolean;
   kbBriefModel: string;
+  kbWatchFolders: string[];
 }
 
 /** A knowledge base entry indexed from completed work or uploaded documents. */

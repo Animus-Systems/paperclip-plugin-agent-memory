@@ -6,6 +6,7 @@ import { extractMemoriesWithLlm } from "./worker/llm-extractor.js";
 import { consolidateAgent, findCrossAgentFacts } from "./worker/consolidator.js";
 import type { MemoryPluginConfig, MemoryStats, Memory, KBStats } from "./worker/types.js";
 import { generateExecutiveBrief } from "./worker/brief-generator.js";
+import { parseFile, isSupportedFile, ensurePythonDeps } from "./worker/file-parser.js";
 
 const DEFAULT_CONFIG: MemoryPluginConfig = {
   enabled: true,
@@ -20,6 +21,7 @@ const DEFAULT_CONFIG: MemoryPluginConfig = {
   kbAutoIndex: true,
   kbAutoBreif: true,
   kbBriefModel: "deepseek/deepseek-v3.2",
+  kbWatchFolders: [],
 };
 
 function kbStatsKey(companyId: string): ScopeKey {
@@ -45,6 +47,9 @@ const plugin = definePlugin({
     const client = new MemosClient(cfg.memosUrl);
 
     ctx.logger.info("Agent Memory plugin starting", { memosUrl: cfg.memosUrl, autoExtract: cfg.autoExtract });
+
+    // Ensure Python parsing deps are available for KB file ingestion
+    ensurePythonDeps();
 
     // ── Startup health check ──────────────────────────────────
     const memosOk = await client.healthy();
@@ -229,6 +234,106 @@ const plugin = definePlugin({
         }
       },
     );
+
+    // ══════════════════════════════════════════════════════════
+    // AGENT TOOL — index_folder (Knowledge Base)
+    // ══════════════════════════════════════════════════════════
+
+    ctx.tools.register(
+      "index_folder",
+      {
+        displayName: "Index Folder",
+        description:
+          "Index all documents in a folder into the Knowledge Base. " +
+          "Supports PDF, DOCX, XLSX, CSV, markdown, HTML, text files. " +
+          "Use to make project files searchable via search_knowledge.",
+        parametersSchema: {
+          type: "object",
+          properties: {
+            path: { type: "string", description: "Absolute folder path to index (e.g. /data/accounts/Animus-Systems-SL)" },
+            recursive: { type: "boolean", description: "Include subfolders (default: true)" },
+          },
+          required: ["path"],
+        },
+      },
+      async (params, runCtx) => {
+        const folderPath = (params as { path: string }).path;
+        const recursive = (params as { recursive?: boolean }).recursive !== false;
+        const companyId = runCtx.companyId;
+
+        try {
+          const result = await indexFolder(folderPath, companyId, recursive);
+          ctx.logger.info("KB: folder indexed via agent tool", { folderPath, ...result });
+          return {
+            content: `Indexed ${result.indexed} files from ${folderPath} (${result.skipped} skipped, ${result.errors} errors). Formats: ${Object.entries(result.byFormat).map(([k, v]) => `${k}: ${v}`).join(", ")}`,
+            data: result,
+          };
+        } catch (err) {
+          return { content: `Error indexing folder: ${String(err).substring(0, 200)}` };
+        }
+      },
+    );
+
+    /** Shared folder indexing logic used by both agent tool and action handler. */
+    async function indexFolder(folderPath: string, companyId: string, recursive: boolean) {
+      const { readdir, stat } = await import("node:fs/promises");
+      const { join, basename } = await import("node:path");
+
+      const files: string[] = [];
+      async function walk(dir: string) {
+        const entries = await readdir(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          const full = join(dir, entry.name);
+          if (entry.isDirectory() && recursive && !entry.name.startsWith(".") && entry.name !== "node_modules") {
+            await walk(full);
+          } else if (entry.isFile() && isSupportedFile(full)) {
+            files.push(full);
+          }
+        }
+      }
+      await walk(folderPath);
+
+      let indexed = 0;
+      let skipped = 0;
+      let errors = 0;
+      const byFormat: Record<string, number> = {};
+
+      for (const filePath of files) {
+        try {
+          const fileStat = await stat(filePath);
+          if (fileStat.size > 10 * 1024 * 1024) { skipped++; continue; } // Skip files > 10MB
+          if (fileStat.size < 10) { skipped++; continue; } // Skip empty/tiny files
+
+          const result = await parseFile(filePath);
+          if (result.text.length < 20) { skipped++; continue; }
+
+          const name = basename(filePath);
+          await client.storeKnowledgeEntry(result.text.substring(0, 8000), {
+            companyId,
+            title: name,
+            source: "document",
+            tags: [result.format, "folder-index"],
+          });
+
+          indexed++;
+          byFormat[result.format] = (byFormat[result.format] ?? 0) + 1;
+        } catch {
+          errors++;
+        }
+      }
+
+      // Update KB stats
+      const kbStats = ((await ctx.state.get(kbStatsKey(companyId))) ?? emptyKBStats()) as KBStats;
+      kbStats.uploadedDocuments += indexed;
+      await ctx.state.set(kbStatsKey(companyId), kbStats);
+
+      await ctx.activity.log({
+        companyId,
+        message: `KB: indexed ${indexed} files from ${folderPath} (${files.length} found, ${skipped} skipped, ${errors} errors)`,
+      });
+
+      return { indexed, skipped, errors, total: files.length, byFormat };
+    }
 
     // ══════════════════════════════════════════════════════════
     // EVENT: issue.updated — auto-index completed work into KB
@@ -641,6 +746,21 @@ const plugin = definePlugin({
       return { ok: true, chunkCount };
     });
 
+    /** Index a folder into the KB (UI-triggered). */
+    ctx.actions.register("kb:index-folder", async (params: Record<string, unknown>) => {
+      const companyId = params.companyId as string;
+      const folderPath = params.path as string;
+      const recursive = (params.recursive as boolean) !== false;
+      if (!companyId || !folderPath) return { ok: false, error: "companyId and path required" };
+
+      try {
+        const result = await indexFolder(folderPath, companyId, recursive);
+        return { ok: true, ...result };
+      } catch (err) {
+        return { ok: false, error: String(err).substring(0, 200) };
+      }
+    });
+
     /** Generate executive brief for an issue. */
     ctx.actions.register("kb:generate-brief", async (params: Record<string, unknown>) => {
       const companyId = params.companyId as string;
@@ -979,6 +1099,35 @@ const plugin = definePlugin({
         crossAgentFacts: crossFacts.length,
       });
     }); // end autodream job
+
+    // ══════════════════════════════════════════════════════════
+    // SCHEDULED JOB — KB folder watch (periodic re-index)
+    // ══════════════════════════════════════════════════════════
+
+    ctx.jobs.register("kb-folder-watch", async () => {
+      const latestRaw = await ctx.config.get();
+      const latestCfg = { ...DEFAULT_CONFIG, ...(latestRaw as Record<string, unknown>) };
+      const watchFolders = (latestCfg.kbWatchFolders ?? []) as string[];
+      if (watchFolders.length === 0) return;
+
+      let companyId = "";
+      try {
+        const stored = await ctx.state.get({ scopeKind: "instance", stateKey: "known-company-id" });
+        if (stored && typeof stored === "string") companyId = stored;
+      } catch { /* no company yet */ }
+      if (!companyId) return;
+
+      ctx.logger.info("KB folder watch starting", { folders: watchFolders.length });
+
+      for (const folder of watchFolders) {
+        try {
+          const result = await indexFolder(folder, companyId, true);
+          ctx.logger.info("KB folder watch indexed", { folder, ...result });
+        } catch (err) {
+          ctx.logger.warn("KB folder watch failed", { folder, error: String(err) });
+        }
+      }
+    }); // end kb-folder-watch job
 
     // ══════════════════════════════════════════════════════════
     // STATUS DATA — serves the plugin status/dashboard page

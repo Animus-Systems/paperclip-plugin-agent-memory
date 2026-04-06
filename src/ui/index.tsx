@@ -513,6 +513,7 @@ export function MemorySettingsPage({ context }: PluginSettingsPageProps) {
         kbAutoIndex: cfg.kbAutoIndex ?? true,
         kbAutoBreif: cfg.kbAutoBreif ?? true,
         kbBriefModel: cfg.kbBriefModel ?? "deepseek/deepseek-v3.2",
+        kbWatchFolders: cfg.kbWatchFolders ?? [],
       };
       const res = await fetch(`/api/plugins/animusystems.agent-memory/config`, {
         method: "POST",
@@ -657,9 +658,56 @@ export function MemorySettingsPage({ context }: PluginSettingsPageProps) {
             {(cfg.kbAutoBreif ?? true) ? "enabled" : "disabled"}
           </button>
         </div>
-        <div style={{ ...configRow, borderBottom: "none" }}>
+        <div style={configRow}>
           <span style={muted}>Brief generation model</span>
           <input style={inputStyle} value={String(cfg.kbBriefModel ?? "deepseek/deepseek-v3.2")} onChange={(e) => handleChange("kbBriefModel", e.target.value)} />
+        </div>
+        <div style={{ ...configRow, borderBottom: "none", flexDirection: "column", alignItems: "stretch", gap: 6 }}>
+          <span style={muted}>Watch folders (one per line — indexed every 6 hours)</span>
+          <textarea
+            style={{ ...inputStyle, textAlign: "left", minHeight: 60, fontFamily: "monospace", fontSize: "0.75rem", resize: "vertical" }}
+            value={((cfg.kbWatchFolders as string[]) ?? []).join("\n")}
+            onChange={(e) => handleChange("kbWatchFolders", e.target.value.split("\n").map((s: string) => s.trim()).filter(Boolean))}
+            placeholder="/data/accounts/Animus-Systems-SL&#10;/data/github/animusystems"
+          />
+        </div>
+      </div>
+
+      {/* Index folder (manual) */}
+      <div style={sectionTitle}>Index Folder</div>
+      <div style={card}>
+        <div style={{ ...configRow, borderBottom: "none", gap: 8 }}>
+          <input
+            style={{ ...inputStyle, flex: 1, textAlign: "left" }}
+            placeholder="/data/accounts/Animus-Systems-SL"
+            id="kb-folder-path"
+          />
+          <button
+            onClick={async () => {
+              const input = document.getElementById("kb-folder-path") as HTMLInputElement;
+              const path = input?.value?.trim();
+              if (!path) return;
+              input.disabled = true;
+              try {
+                const res = await fetch(`/api/plugins/animusystems.agent-memory/actions/kb:index-folder`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ companyId: context.companyId, path, recursive: true }),
+                }).then((r) => r.json());
+                alert(res.ok ? `Indexed ${res.indexed} files (${res.skipped} skipped, ${res.errors} errors)` : `Error: ${res.error}`);
+              } catch (err) {
+                alert(`Failed: ${err}`);
+              }
+              input.disabled = false;
+            }}
+            style={{
+              padding: "6px 14px", borderRadius: 5, border: "none",
+              background: "rgba(59,130,246,0.25)", color: "rgb(147,197,253)",
+              fontSize: "0.8rem", fontWeight: 500, cursor: "pointer", whiteSpace: "nowrap",
+            }}
+          >
+            Index Now
+          </button>
         </div>
       </div>
 

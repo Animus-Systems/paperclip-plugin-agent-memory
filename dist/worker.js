@@ -509,6 +509,170 @@ Format the output as clean markdown starting with: # Executive Brief: ${parentId
   }
 }
 
+// src/worker/file-parser.ts
+import { readFile } from "node:fs/promises";
+import { execSync } from "node:child_process";
+import { writeFileSync, unlinkSync } from "node:fs";
+import { resolve, extname } from "node:path";
+import { tmpdir } from "node:os";
+var SUPPORTED_EXTENSIONS = /* @__PURE__ */ new Set([
+  ".md",
+  ".txt",
+  ".csv",
+  ".html",
+  ".htm",
+  ".json",
+  ".pdf",
+  ".docx",
+  ".doc",
+  ".xlsx",
+  ".xls"
+]);
+function isSupportedFile(filePath) {
+  const ext = extname(filePath).toLowerCase();
+  return SUPPORTED_EXTENSIONS.has(ext);
+}
+function ensurePythonDeps() {
+  try {
+    execSync(
+      "python3 -c 'import PyPDF2, docx, openpyxl' 2>/dev/null || python3 -m pip install --break-system-packages -q pypdf2 python-docx openpyxl 2>/dev/null",
+      { timeout: 12e4, stdio: "ignore" }
+    );
+  } catch {
+  }
+}
+async function parseFile(filePath) {
+  const ext = extname(filePath).toLowerCase();
+  switch (ext) {
+    case ".md":
+    case ".txt":
+    case ".csv":
+      return parseTextFile(filePath, ext.slice(1));
+    case ".html":
+    case ".htm":
+      return parseHtmlFile(filePath);
+    case ".json":
+      return parseJsonFile(filePath);
+    case ".pdf":
+      return parsePdf(filePath);
+    case ".docx":
+    case ".doc":
+      return parseDocx(filePath);
+    case ".xlsx":
+    case ".xls":
+      return parseXlsx(filePath);
+    default:
+      throw new Error(`Unsupported format: ${ext}`);
+  }
+}
+async function parseTextFile(filePath, format) {
+  const text = await readFile(filePath, "utf-8");
+  return { text, format, charCount: text.length };
+}
+async function parseHtmlFile(filePath) {
+  const raw = await readFile(filePath, "utf-8");
+  const text = raw.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "").replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "").replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/\s+/g, " ").trim();
+  return { text, format: "html", charCount: text.length };
+}
+async function parseJsonFile(filePath) {
+  const raw = await readFile(filePath, "utf-8");
+  try {
+    const obj = JSON.parse(raw);
+    const text = JSON.stringify(obj, null, 2);
+    return { text, format: "json", charCount: text.length };
+  } catch {
+    return { text: raw, format: "json", charCount: raw.length };
+  }
+}
+function runPythonScript(script, timeoutMs = 3e4) {
+  const tmpFile = resolve(tmpdir(), `.kb_parse_${Date.now()}.py`);
+  try {
+    writeFileSync(tmpFile, script, "utf-8");
+    const result = execSync(`python3 "${tmpFile}"`, {
+      encoding: "utf-8",
+      timeout: timeoutMs,
+      maxBuffer: 20 * 1024 * 1024
+    });
+    return result;
+  } finally {
+    try {
+      unlinkSync(tmpFile);
+    } catch {
+    }
+  }
+}
+function parsePdf(filePath) {
+  const script = `
+import sys
+from PyPDF2 import PdfReader
+
+try:
+    reader = PdfReader(${JSON.stringify(filePath)})
+    pages = []
+    for page in reader.pages:
+        text = page.extract_text()
+        if text and text.strip():
+            pages.append(text.strip())
+    result = "\\n\\n".join(pages)
+    print(result)
+except Exception as e:
+    print(f"Error: {e}", file=sys.stderr)
+    sys.exit(1)
+`;
+  const text = runPythonScript(script).trim();
+  return { text, format: "pdf", charCount: text.length };
+}
+function parseDocx(filePath) {
+  const script = `
+import sys
+from docx import Document
+
+try:
+    doc = Document(${JSON.stringify(filePath)})
+    paragraphs = []
+    for para in doc.paragraphs:
+        if para.text.strip():
+            paragraphs.append(para.text.strip())
+    # Also extract tables
+    for table in doc.tables:
+        for row in table.rows:
+            cells = [cell.text.strip() for cell in row.cells if cell.text.strip()]
+            if cells:
+                paragraphs.append(" | ".join(cells))
+    print("\\n\\n".join(paragraphs))
+except Exception as e:
+    print(f"Error: {e}", file=sys.stderr)
+    sys.exit(1)
+`;
+  const text = runPythonScript(script).trim();
+  return { text, format: "docx", charCount: text.length };
+}
+function parseXlsx(filePath) {
+  const script = `
+import sys
+from openpyxl import load_workbook
+
+try:
+    wb = load_workbook(${JSON.stringify(filePath)}, data_only=True)
+    sheets = []
+    for ws in wb.worksheets:
+        rows = []
+        for row in ws.iter_rows(values_only=True):
+            cells = [str(c) if c is not None else "" for c in row]
+            if any(c.strip() for c in cells):
+                rows.append(" | ".join(c for c in cells if c.strip()))
+        if rows:
+            header = f"## Sheet: {ws.title}" if len(wb.worksheets) > 1 else ""
+            sheets.append((header + "\\n" if header else "") + "\\n".join(rows))
+    print("\\n\\n".join(sheets))
+except Exception as e:
+    print(f"Error: {e}", file=sys.stderr)
+    sys.exit(1)
+`;
+  const text = runPythonScript(script).trim();
+  return { text, format: "xlsx", charCount: text.length };
+}
+
 // src/worker.ts
 var DEFAULT_CONFIG = {
   enabled: true,
@@ -522,7 +686,8 @@ var DEFAULT_CONFIG = {
   llmFallbackModel: "google/gemini-2.5-flash",
   kbAutoIndex: true,
   kbAutoBreif: true,
-  kbBriefModel: "deepseek/deepseek-v3.2"
+  kbBriefModel: "deepseek/deepseek-v3.2",
+  kbWatchFolders: []
 };
 function kbStatsKey(companyId) {
   return { scopeKind: "company", scopeId: companyId, stateKey: "kb-stats" };
@@ -542,6 +707,7 @@ var plugin = definePlugin({
     const cfg = { ...DEFAULT_CONFIG, ...rawConfig };
     const client = new MemosClient(cfg.memosUrl);
     ctx.logger.info("Agent Memory plugin starting", { memosUrl: cfg.memosUrl, autoExtract: cfg.autoExtract });
+    ensurePythonDeps();
     const memosOk = await client.healthy();
     if (!memosOk) {
       ctx.logger.warn("MemOS is not reachable \u2014 memory features will be degraded", { url: cfg.memosUrl });
@@ -684,6 +850,94 @@ ${formatted}`,
         }
       }
     );
+    ctx.tools.register(
+      "index_folder",
+      {
+        displayName: "Index Folder",
+        description: "Index all documents in a folder into the Knowledge Base. Supports PDF, DOCX, XLSX, CSV, markdown, HTML, text files. Use to make project files searchable via search_knowledge.",
+        parametersSchema: {
+          type: "object",
+          properties: {
+            path: { type: "string", description: "Absolute folder path to index (e.g. /data/accounts/Animus-Systems-SL)" },
+            recursive: { type: "boolean", description: "Include subfolders (default: true)" }
+          },
+          required: ["path"]
+        }
+      },
+      async (params, runCtx) => {
+        const folderPath = params.path;
+        const recursive = params.recursive !== false;
+        const companyId = runCtx.companyId;
+        try {
+          const result = await indexFolder(folderPath, companyId, recursive);
+          ctx.logger.info("KB: folder indexed via agent tool", { folderPath, ...result });
+          return {
+            content: `Indexed ${result.indexed} files from ${folderPath} (${result.skipped} skipped, ${result.errors} errors). Formats: ${Object.entries(result.byFormat).map(([k, v]) => `${k}: ${v}`).join(", ")}`,
+            data: result
+          };
+        } catch (err) {
+          return { content: `Error indexing folder: ${String(err).substring(0, 200)}` };
+        }
+      }
+    );
+    async function indexFolder(folderPath, companyId, recursive) {
+      const { readdir, stat } = await import("node:fs/promises");
+      const { join, basename } = await import("node:path");
+      const files = [];
+      async function walk(dir) {
+        const entries = await readdir(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          const full = join(dir, entry.name);
+          if (entry.isDirectory() && recursive && !entry.name.startsWith(".") && entry.name !== "node_modules") {
+            await walk(full);
+          } else if (entry.isFile() && isSupportedFile(full)) {
+            files.push(full);
+          }
+        }
+      }
+      await walk(folderPath);
+      let indexed = 0;
+      let skipped = 0;
+      let errors = 0;
+      const byFormat = {};
+      for (const filePath of files) {
+        try {
+          const fileStat = await stat(filePath);
+          if (fileStat.size > 10 * 1024 * 1024) {
+            skipped++;
+            continue;
+          }
+          if (fileStat.size < 10) {
+            skipped++;
+            continue;
+          }
+          const result = await parseFile(filePath);
+          if (result.text.length < 20) {
+            skipped++;
+            continue;
+          }
+          const name = basename(filePath);
+          await client.storeKnowledgeEntry(result.text.substring(0, 8e3), {
+            companyId,
+            title: name,
+            source: "document",
+            tags: [result.format, "folder-index"]
+          });
+          indexed++;
+          byFormat[result.format] = (byFormat[result.format] ?? 0) + 1;
+        } catch {
+          errors++;
+        }
+      }
+      const kbStats = await ctx.state.get(kbStatsKey(companyId)) ?? emptyKBStats();
+      kbStats.uploadedDocuments += indexed;
+      await ctx.state.set(kbStatsKey(companyId), kbStats);
+      await ctx.activity.log({
+        companyId,
+        message: `KB: indexed ${indexed} files from ${folderPath} (${files.length} found, ${skipped} skipped, ${errors} errors)`
+      });
+      return { indexed, skipped, errors, total: files.length, byFormat };
+    }
     ctx.events.on("issue.updated", async (event) => {
       if (!cfg.enabled || !cfg.kbAutoIndex) return;
       const payload = event.payload;
@@ -1007,6 +1261,18 @@ ${issue.description.substring(0, 1e3)}` : "",
       });
       return { ok: true, chunkCount };
     });
+    ctx.actions.register("kb:index-folder", async (params) => {
+      const companyId = params.companyId;
+      const folderPath = params.path;
+      const recursive = params.recursive !== false;
+      if (!companyId || !folderPath) return { ok: false, error: "companyId and path required" };
+      try {
+        const result = await indexFolder(folderPath, companyId, recursive);
+        return { ok: true, ...result };
+      } catch (err) {
+        return { ok: false, error: String(err).substring(0, 200) };
+      }
+    });
     ctx.actions.register("kb:generate-brief", async (params) => {
       const companyId = params.companyId;
       const issueId = params.issueId;
@@ -1275,6 +1541,28 @@ ${issue.description.substring(0, 1e3)}` : "",
         totalStale,
         crossAgentFacts: crossFacts.length
       });
+    });
+    ctx.jobs.register("kb-folder-watch", async () => {
+      const latestRaw = await ctx.config.get();
+      const latestCfg = { ...DEFAULT_CONFIG, ...latestRaw };
+      const watchFolders = latestCfg.kbWatchFolders ?? [];
+      if (watchFolders.length === 0) return;
+      let companyId = "";
+      try {
+        const stored = await ctx.state.get({ scopeKind: "instance", stateKey: "known-company-id" });
+        if (stored && typeof stored === "string") companyId = stored;
+      } catch {
+      }
+      if (!companyId) return;
+      ctx.logger.info("KB folder watch starting", { folders: watchFolders.length });
+      for (const folder of watchFolders) {
+        try {
+          const result = await indexFolder(folder, companyId, true);
+          ctx.logger.info("KB folder watch indexed", { folder, ...result });
+        } catch (err) {
+          ctx.logger.warn("KB folder watch failed", { folder, error: String(err) });
+        }
+      }
     });
     ctx.data.register("memory:status", async (params) => {
       const companyId = params.companyId;

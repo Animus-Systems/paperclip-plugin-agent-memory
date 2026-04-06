@@ -474,14 +474,15 @@ const plugin = definePlugin({
                   }
 
                   if (subtaskOutputs.length > 0) {
-                    const brief = await generateExecutiveBrief({
-                      parentTitle: issue.title || "Untitled",
-                      parentIdentifier: issue.identifier || issueId,
+                    const briefResult = await generateExecutiveBrief({
+                      parentTitle: (issue.title || "Untitled") as string,
+                      parentIdentifier: (issue.identifier || issueId) as string,
                       subtasks: subtaskOutputs,
                       apiKey,
                       baseUrl: "https://openrouter.ai/api/v1",
                       model: cfg.kbBriefModel,
                     });
+                    const brief = briefResult.brief;
 
                     if (brief) {
                       // Store brief in KB
@@ -882,16 +883,17 @@ const plugin = definePlugin({
         });
       }
 
-      const brief = await generateExecutiveBrief({
-        parentTitle: issue.title || "Untitled",
-        parentIdentifier: issue.identifier || issueId,
+      const result = await generateExecutiveBrief({
+        parentTitle: (issue.title || "Untitled") as string,
+        parentIdentifier: (issue.identifier || issueId) as string,
         subtasks: subtaskOutputs,
         apiKey,
         baseUrl: "https://openrouter.ai/api/v1",
         model: cfg.kbBriefModel,
       });
 
-      if (!brief) return { ok: false, error: "Brief generation failed" };
+      if (!result.brief) return { ok: false, error: result.error || "Brief generation failed" };
+      const brief = result.brief;
 
       await client.storeKnowledgeEntry(brief, {
         companyId,

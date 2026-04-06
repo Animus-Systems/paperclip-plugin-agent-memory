@@ -727,6 +727,14 @@ const plugin = definePlugin({
       return client.searchKnowledge(query, companyId, 10);
     });
 
+    /** KB search as action (for UI usePluginAction calls). */
+    ctx.actions.register("kb:search", async (params: Record<string, unknown>) => {
+      const companyId = params.companyId as string;
+      const query = params.query as string;
+      if (!query || !companyId) return [];
+      return client.searchKnowledge(query, companyId, 10);
+    });
+
     /** List all KB entries (documents, indexed issues, briefs). */
     ctx.data.register("kb:list-documents", async (params: Record<string, unknown>) => {
       const companyId = params.companyId as string;

@@ -1268,6 +1268,12 @@ ${issue.description.substring(0, 1e3)}` : "",
       if (!query || !companyId) return [];
       return client.searchKnowledge(query, companyId, 10);
     });
+    ctx.actions.register("kb:search", async (params) => {
+      const companyId = params.companyId;
+      const query = params.query;
+      if (!query || !companyId) return [];
+      return client.searchKnowledge(query, companyId, 10);
+    });
     ctx.data.register("kb:list-documents", async (params) => {
       const companyId = params.companyId;
       if (!companyId) return [];

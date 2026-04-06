@@ -265,7 +265,7 @@ const plugin = definePlugin({
           const result = await indexFolder(folderPath, companyId, recursive);
           ctx.logger.info("KB: folder indexed via agent tool", { folderPath, ...result });
           return {
-            content: `Indexed ${result.indexed} files from ${folderPath} (${result.skipped} skipped, ${result.errors} errors). Formats: ${Object.entries(result.byFormat).map(([k, v]) => `${k}: ${v}`).join(", ")}`,
+            content: `Indexed ${result.indexed} new files from ${folderPath} (${result.unchanged} unchanged, ${result.skipped} skipped, ${result.errors} errors). Formats: ${Object.entries(result.byFormat).map(([k, v]) => `${k}: ${v}`).join(", ")}`,
             data: result,
           };
         } catch (err) {
@@ -276,8 +276,13 @@ const plugin = definePlugin({
 
     /** Shared folder indexing logic used by both agent tool and action handler. */
     async function indexFolder(folderPath: string, companyId: string, recursive: boolean) {
-      const { readdir, stat } = await import("node:fs/promises");
+      const { readdir, stat, readFile: readFileRaw } = await import("node:fs/promises");
       const { join, basename } = await import("node:path");
+      const { createHash } = await import("node:crypto");
+
+      // Load existing file hash manifest
+      const manifestKey: ScopeKey = { scopeKind: "company", scopeId: companyId, stateKey: "kb-file-hashes" };
+      const hashManifest = ((await ctx.state.get(manifestKey)) ?? {}) as Record<string, string>;
 
       const files: string[] = [];
       async function walk(dir: string) {
@@ -295,14 +300,20 @@ const plugin = definePlugin({
 
       let indexed = 0;
       let skipped = 0;
+      let unchanged = 0;
       let errors = 0;
       const byFormat: Record<string, number> = {};
 
       for (const filePath of files) {
         try {
           const fileStat = await stat(filePath);
-          if (fileStat.size > 10 * 1024 * 1024) { skipped++; continue; } // Skip files > 10MB
-          if (fileStat.size < 10) { skipped++; continue; } // Skip empty/tiny files
+          if (fileStat.size > 10 * 1024 * 1024) { skipped++; continue; }
+          if (fileStat.size < 10) { skipped++; continue; }
+
+          // Hash file content and skip if unchanged
+          const raw = await readFileRaw(filePath);
+          const hash = createHash("md5").update(raw).digest("hex");
+          if (hashManifest[filePath] === hash) { unchanged++; continue; }
 
           const result = await parseFile(filePath);
           if (result.text.length < 20) { skipped++; continue; }
@@ -315,6 +326,7 @@ const plugin = definePlugin({
             tags: [result.format, "folder-index"],
           });
 
+          hashManifest[filePath] = hash;
           indexed++;
           byFormat[result.format] = (byFormat[result.format] ?? 0) + 1;
         } catch {
@@ -322,17 +334,22 @@ const plugin = definePlugin({
         }
       }
 
+      // Persist updated hash manifest
+      await ctx.state.set(manifestKey, hashManifest);
+
       // Update KB stats
-      const kbStats = ((await ctx.state.get(kbStatsKey(companyId))) ?? emptyKBStats()) as KBStats;
-      kbStats.uploadedDocuments += indexed;
-      await ctx.state.set(kbStatsKey(companyId), kbStats);
+      if (indexed > 0) {
+        const kbStats = ((await ctx.state.get(kbStatsKey(companyId))) ?? emptyKBStats()) as KBStats;
+        kbStats.uploadedDocuments += indexed;
+        await ctx.state.set(kbStatsKey(companyId), kbStats);
+      }
 
       await ctx.activity.log({
         companyId,
-        message: `KB: indexed ${indexed} files from ${folderPath} (${files.length} found, ${skipped} skipped, ${errors} errors)`,
+        message: `KB: indexed ${indexed} new files from ${folderPath} (${unchanged} unchanged, ${skipped} skipped, ${errors} errors)`,
       });
 
-      return { indexed, skipped, errors, total: files.length, byFormat };
+      return { indexed, unchanged, skipped, errors, total: files.length, byFormat };
     }
 
     // ══════════════════════════════════════════════════════════

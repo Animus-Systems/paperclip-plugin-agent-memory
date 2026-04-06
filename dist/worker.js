@@ -872,7 +872,7 @@ ${formatted}`,
           const result = await indexFolder(folderPath, companyId, recursive);
           ctx.logger.info("KB: folder indexed via agent tool", { folderPath, ...result });
           return {
-            content: `Indexed ${result.indexed} files from ${folderPath} (${result.skipped} skipped, ${result.errors} errors). Formats: ${Object.entries(result.byFormat).map(([k, v]) => `${k}: ${v}`).join(", ")}`,
+            content: `Indexed ${result.indexed} new files from ${folderPath} (${result.unchanged} unchanged, ${result.skipped} skipped, ${result.errors} errors). Formats: ${Object.entries(result.byFormat).map(([k, v]) => `${k}: ${v}`).join(", ")}`,
             data: result
           };
         } catch (err) {
@@ -881,8 +881,11 @@ ${formatted}`,
       }
     );
     async function indexFolder(folderPath, companyId, recursive) {
-      const { readdir, stat } = await import("node:fs/promises");
+      const { readdir, stat, readFile: readFileRaw } = await import("node:fs/promises");
       const { join, basename } = await import("node:path");
+      const { createHash } = await import("node:crypto");
+      const manifestKey = { scopeKind: "company", scopeId: companyId, stateKey: "kb-file-hashes" };
+      const hashManifest = await ctx.state.get(manifestKey) ?? {};
       const files = [];
       async function walk(dir) {
         const entries = await readdir(dir, { withFileTypes: true });
@@ -898,6 +901,7 @@ ${formatted}`,
       await walk(folderPath);
       let indexed = 0;
       let skipped = 0;
+      let unchanged = 0;
       let errors = 0;
       const byFormat = {};
       for (const filePath of files) {
@@ -909,6 +913,12 @@ ${formatted}`,
           }
           if (fileStat.size < 10) {
             skipped++;
+            continue;
+          }
+          const raw = await readFileRaw(filePath);
+          const hash = createHash("md5").update(raw).digest("hex");
+          if (hashManifest[filePath] === hash) {
+            unchanged++;
             continue;
           }
           const result = await parseFile(filePath);
@@ -923,20 +933,24 @@ ${formatted}`,
             source: "document",
             tags: [result.format, "folder-index"]
           });
+          hashManifest[filePath] = hash;
           indexed++;
           byFormat[result.format] = (byFormat[result.format] ?? 0) + 1;
         } catch {
           errors++;
         }
       }
-      const kbStats = await ctx.state.get(kbStatsKey(companyId)) ?? emptyKBStats();
-      kbStats.uploadedDocuments += indexed;
-      await ctx.state.set(kbStatsKey(companyId), kbStats);
+      await ctx.state.set(manifestKey, hashManifest);
+      if (indexed > 0) {
+        const kbStats = await ctx.state.get(kbStatsKey(companyId)) ?? emptyKBStats();
+        kbStats.uploadedDocuments += indexed;
+        await ctx.state.set(kbStatsKey(companyId), kbStats);
+      }
       await ctx.activity.log({
         companyId,
-        message: `KB: indexed ${indexed} files from ${folderPath} (${files.length} found, ${skipped} skipped, ${errors} errors)`
+        message: `KB: indexed ${indexed} new files from ${folderPath} (${unchanged} unchanged, ${skipped} skipped, ${errors} errors)`
       });
-      return { indexed, skipped, errors, total: files.length, byFormat };
+      return { indexed, unchanged, skipped, errors, total: files.length, byFormat };
     }
     ctx.events.on("issue.updated", async (event) => {
       if (!cfg.enabled || !cfg.kbAutoIndex) return;

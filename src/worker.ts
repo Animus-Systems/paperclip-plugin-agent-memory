@@ -4,7 +4,8 @@ import { MemosClient } from "./worker/memos-client.js";
 import { extractMemories } from "./worker/extractor.js";
 import { extractMemoriesWithLlm } from "./worker/llm-extractor.js";
 import { consolidateAgent, findCrossAgentFacts } from "./worker/consolidator.js";
-import type { MemoryPluginConfig, MemoryStats, Memory } from "./worker/types.js";
+import type { MemoryPluginConfig, MemoryStats, Memory, KBStats } from "./worker/types.js";
+import { generateExecutiveBrief } from "./worker/brief-generator.js";
 
 const DEFAULT_CONFIG: MemoryPluginConfig = {
   enabled: true,
@@ -16,7 +17,18 @@ const DEFAULT_CONFIG: MemoryPluginConfig = {
   extractionMode: "hybrid",
   llmExtractionModel: "openai/gpt-4o-mini",
   llmFallbackModel: "google/gemini-2.5-flash",
+  kbAutoIndex: true,
+  kbAutoBreif: true,
+  kbBriefModel: "deepseek/deepseek-v3.2",
 };
+
+function kbStatsKey(companyId: string): ScopeKey {
+  return { scopeKind: "company", scopeId: companyId, stateKey: "kb-stats" };
+}
+
+function emptyKBStats(): KBStats {
+  return { indexedIssues: 0, uploadedDocuments: 0, generatedBriefs: 0 };
+}
 
 function statsKey(companyId: string): ScopeKey {
   return { scopeKind: "company", scopeId: companyId, stateKey: "memory-stats" };
@@ -170,6 +182,244 @@ const plugin = definePlugin({
         }
       },
     );
+
+    // ══════════════════════════════════════════════════════════
+    // AGENT TOOL — search_knowledge (Knowledge Base)
+    // ══════════════════════════════════════════════════════════
+
+    ctx.tools.register(
+      "search_knowledge",
+      {
+        displayName: "Search Knowledge Base",
+        description:
+          "Search completed work, research reports, and company documents. " +
+          "Use when you need context from prior completed tasks, audits, or uploaded reference material.",
+        parametersSchema: {
+          type: "object",
+          properties: {
+            query: { type: "string", description: "What to search for" },
+          },
+          required: ["query"],
+        },
+      },
+      async (params, runCtx) => {
+        const { query } = params as { query?: string };
+        if (!query) return { content: "Error: query is required" };
+
+        const companyId = runCtx.companyId;
+        try {
+          const results = await client.searchKnowledge(query, companyId, 8);
+          if (results.length === 0) {
+            return { content: "No knowledge base entries found for that query." };
+          }
+
+          const formatted = results
+            .slice(0, 8)
+            .map((m, i) => `${i + 1}. ${m.content.substring(0, 600)}`)
+            .join("\n\n");
+
+          ctx.logger.info("KB search", { query: query.substring(0, 80), results: results.length });
+          return {
+            content: `## Knowledge Base results for "${query.substring(0, 60)}"\n${formatted}`,
+            data: { count: results.length },
+          };
+        } catch (err) {
+          ctx.logger.warn("KB search failed", { error: String(err) });
+          return { content: `Knowledge base search failed: ${String(err).substring(0, 200)}` };
+        }
+      },
+    );
+
+    // ══════════════════════════════════════════════════════════
+    // EVENT: issue.updated — auto-index completed work into KB
+    // ══════════════════════════════════════════════════════════
+
+    ctx.events.on("issue.updated", async (event: PluginEvent) => {
+      if (!cfg.enabled || !cfg.kbAutoIndex) return;
+
+      const payload = event.payload as Record<string, unknown>;
+      const status = payload?.status as string;
+      if (status !== "done") return;
+
+      const companyId = event.companyId;
+      const issueId = (payload?.entityId ?? payload?.issueId ?? "") as string;
+      const identifier = (payload?.identifier ?? "") as string;
+      if (!issueId || !companyId) return;
+
+      ctx.logger.info("KB: indexing completed issue", { issueId, identifier });
+
+      try {
+        // Fetch issue details + comments via internal API
+        const port = process.env.PORT || "3100";
+        const headers: Record<string, string> = { "Content-Type": "application/json" };
+
+        const issueRes = await fetch(`http://localhost:${port}/api/issues/${issueId}`, {
+          headers, signal: AbortSignal.timeout(5000),
+        });
+        if (!issueRes.ok) return;
+        const issue = await issueRes.json() as {
+          id: string; identifier?: string; title?: string; description?: string;
+          assigneeAgentId?: string; projectId?: string; parentId?: string;
+        };
+
+        const commentsRes = await fetch(`http://localhost:${port}/api/issues/${issueId}/comments`, {
+          headers, signal: AbortSignal.timeout(5000),
+        });
+        const comments = commentsRes.ok
+          ? await commentsRes.json() as Array<{ body: string; authorAgentId?: string }>
+          : [];
+
+        // Get agent name
+        let agentName = "";
+        if (issue.assigneeAgentId) {
+          try {
+            const agents = await ctx.agents.list({ companyId });
+            agentName = agents.find((a) => a.id === issue.assigneeAgentId)?.name || "";
+          } catch { /* best effort */ }
+        }
+
+        // Build KB content from final comments (last 3 substantive agent comments)
+        const agentComments = comments
+          .filter((c) => c.authorAgentId && c.body.length > 100)
+          .slice(-3);
+
+        if (agentComments.length === 0 && (!issue.description || issue.description.length < 50)) {
+          ctx.logger.debug("KB: no substantial content to index", { issueId });
+          return;
+        }
+
+        const content = [
+          `# ${issue.identifier || issueId}: ${issue.title || "Untitled"}`,
+          "",
+          issue.description ? `## Task Description\n${issue.description.substring(0, 1000)}` : "",
+          "",
+          ...agentComments.map((c) => c.body.substring(0, 2000)),
+        ].filter(Boolean).join("\n\n");
+
+        await client.storeKnowledgeEntry(content, {
+          companyId,
+          title: `${issue.identifier || ""} ${issue.title || ""}`.trim(),
+          source: "issue_completion",
+          issueId: issue.id,
+          issueIdentifier: issue.identifier,
+          projectId: issue.projectId,
+          agentId: issue.assigneeAgentId,
+          agentName,
+        });
+
+        // Bump KB stats
+        const kbStats = ((await ctx.state.get(kbStatsKey(companyId))) ?? emptyKBStats()) as KBStats;
+        kbStats.indexedIssues++;
+        kbStats.lastIndexAt = new Date().toISOString();
+        await ctx.state.set(kbStatsKey(companyId), kbStats);
+
+        await ctx.activity.log({
+          companyId,
+          message: `KB: indexed ${issue.identifier || issueId} "${(issue.title || "").substring(0, 60)}" by ${agentName || "unknown"}`,
+          entityType: "issue",
+          entityId: issueId,
+        });
+
+        ctx.logger.info("KB: indexed issue", { issueId, identifier: issue.identifier, contentLen: content.length });
+
+        // ── Auto-generate executive brief for synthesis issues ──
+        if (cfg.kbAutoBreif && issue.parentId) {
+          // This is a subtask — check if all siblings are done (parent synthesis)
+          // Skip: briefs are triggered on the parent closing, not subtask
+        }
+        if (cfg.kbAutoBreif && !issue.parentId) {
+          // Check if this is a parent with completed subtasks
+          try {
+            const childrenRes = await fetch(
+              `http://localhost:${port}/api/companies/${companyId}/issues?parentId=${issueId}`,
+              { headers, signal: AbortSignal.timeout(5000) },
+            );
+            if (childrenRes.ok) {
+              const children = await childrenRes.json() as Array<{ id: string; identifier?: string; title?: string; status?: string }>;
+              if (children.length > 0 && children.every((c) => c.status === "done" || c.status === "cancelled")) {
+                // All subtasks complete — generate executive brief
+                ctx.logger.info("KB: generating executive brief for synthesis", { issueId, subtasks: children.length });
+
+                const apiKey = process.env.OPENROUTER_API_KEY || "";
+                if (apiKey) {
+                  // Collect subtask outputs
+                  const subtaskOutputs: Array<{ identifier: string; title: string; content: string }> = [];
+                  for (const child of children.filter((c) => c.status === "done")) {
+                    try {
+                      const childCommentsRes = await fetch(
+                        `http://localhost:${port}/api/issues/${child.id}/comments`,
+                        { headers, signal: AbortSignal.timeout(5000) },
+                      );
+                      if (childCommentsRes.ok) {
+                        const childComments = await childCommentsRes.json() as Array<{ body: string; authorAgentId?: string }>;
+                        const lastAgentComment = childComments.filter((c) => c.authorAgentId).pop();
+                        subtaskOutputs.push({
+                          identifier: child.identifier || child.id.substring(0, 8),
+                          title: child.title || "Untitled",
+                          content: lastAgentComment?.body.substring(0, 3000) || "(no output)",
+                        });
+                      }
+                    } catch { /* skip */ }
+                  }
+
+                  if (subtaskOutputs.length > 0) {
+                    const brief = await generateExecutiveBrief({
+                      parentTitle: issue.title || "Untitled",
+                      parentIdentifier: issue.identifier || issueId,
+                      subtasks: subtaskOutputs,
+                      apiKey,
+                      baseUrl: "https://openrouter.ai/api/v1",
+                      model: cfg.kbBriefModel,
+                    });
+
+                    if (brief) {
+                      // Store brief in KB
+                      await client.storeKnowledgeEntry(brief, {
+                        companyId,
+                        title: `Executive Brief: ${issue.identifier || ""} ${issue.title || ""}`.trim(),
+                        source: "executive_brief",
+                        issueId: issue.id,
+                        issueIdentifier: issue.identifier,
+                        projectId: issue.projectId,
+                        agentId: issue.assigneeAgentId,
+                        agentName,
+                      });
+
+                      // Post brief as comment on the parent issue
+                      try {
+                        await fetch(`http://localhost:${port}/api/issues/${issueId}/comments`, {
+                          method: "POST",
+                          headers,
+                          body: JSON.stringify({ body: brief }),
+                          signal: AbortSignal.timeout(10000),
+                        });
+                      } catch { /* best effort */ }
+
+                      kbStats.generatedBriefs++;
+                      kbStats.lastBriefAt = new Date().toISOString();
+                      await ctx.state.set(kbStatsKey(companyId), kbStats);
+
+                      await ctx.activity.log({
+                        companyId,
+                        message: `KB: generated executive brief for ${issue.identifier || issueId} (${subtaskOutputs.length} subtasks)`,
+                        entityType: "issue",
+                        entityId: issueId,
+                      });
+
+                      ctx.logger.info("KB: executive brief generated", { issueId, subtasks: subtaskOutputs.length, briefLen: brief.length });
+                    }
+                  }
+                }
+              }
+            }
+          } catch (err) {
+            ctx.logger.warn("KB: brief generation failed", { issueId, error: String(err) });
+          }
+        }
+      } catch (err) {
+        ctx.logger.warn("KB: failed to index issue", { issueId, error: String(err) });
+      }
+    });
 
     // ══════════════════════════════════════════════════════════
     // EVENT: agent.run.finished — auto-extract memories
@@ -350,8 +600,136 @@ const plugin = definePlugin({
     });
 
     // ══════════════════════════════════════════════════════════
+    // KB DATA HANDLERS — expose KB data to UI
+    // ══════════════════════════════════════════════════════════
+
+    ctx.data.register("kb:stats", async (params: Record<string, unknown>) => {
+      const companyId = params.companyId as string;
+      return ((await ctx.state.get(kbStatsKey(companyId))) ?? emptyKBStats()) as KBStats;
+    });
+
+    ctx.data.register("kb:search", async (params: Record<string, unknown>) => {
+      const companyId = params.companyId as string;
+      const query = params.query as string;
+      if (!query || !companyId) return [];
+      return client.searchKnowledge(query, companyId, 10);
+    });
+
+    // ══════════════════════════════════════════════════════════
     // ACTION HANDLERS — UI-triggered operations
     // ══════════════════════════════════════════════════════════
+
+    /** Upload a document to the KB. */
+    ctx.actions.register("kb:upload-document", async (params: Record<string, unknown>) => {
+      const companyId = params.companyId as string;
+      const name = params.name as string;
+      const content = params.content as string;
+      const tags = (params.tags as string[] | undefined) ?? [];
+      if (!companyId || !name || !content) return { ok: false, error: "name and content required" };
+
+      const { chunkCount } = await client.storeDocument(name, content, companyId, tags);
+
+      const kbStats = ((await ctx.state.get(kbStatsKey(companyId))) ?? emptyKBStats()) as KBStats;
+      kbStats.uploadedDocuments++;
+      await ctx.state.set(kbStatsKey(companyId), kbStats);
+
+      await ctx.activity.log({
+        companyId,
+        message: `KB: uploaded document "${name}" (${chunkCount} chunk${chunkCount > 1 ? "s" : ""})`,
+      });
+
+      return { ok: true, chunkCount };
+    });
+
+    /** Generate executive brief for an issue. */
+    ctx.actions.register("kb:generate-brief", async (params: Record<string, unknown>) => {
+      const companyId = params.companyId as string;
+      const issueId = params.issueId as string;
+      if (!companyId || !issueId) return { ok: false, error: "companyId and issueId required" };
+
+      const apiKey = process.env.OPENROUTER_API_KEY || "";
+      if (!apiKey) return { ok: false, error: "OPENROUTER_API_KEY not set" };
+
+      const port = process.env.PORT || "3100";
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+
+      const issueRes = await fetch(`http://localhost:${port}/api/issues/${issueId}`, {
+        headers, signal: AbortSignal.timeout(5000),
+      });
+      if (!issueRes.ok) return { ok: false, error: "Issue not found" };
+      const issue = await issueRes.json() as {
+        id: string; identifier?: string; title?: string; projectId?: string; assigneeAgentId?: string;
+      };
+
+      const childrenRes = await fetch(
+        `http://localhost:${port}/api/companies/${companyId}/issues?parentId=${issueId}`,
+        { headers, signal: AbortSignal.timeout(5000) },
+      );
+      const children = childrenRes.ok
+        ? await childrenRes.json() as Array<{ id: string; identifier?: string; title?: string; status?: string }>
+        : [];
+
+      const subtaskOutputs: Array<{ identifier: string; title: string; content: string }> = [];
+      for (const child of children.filter((c) => c.status === "done")) {
+        const childCommentsRes = await fetch(
+          `http://localhost:${port}/api/issues/${child.id}/comments`,
+          { headers, signal: AbortSignal.timeout(5000) },
+        );
+        if (childCommentsRes.ok) {
+          const childComments = await childCommentsRes.json() as Array<{ body: string; authorAgentId?: string }>;
+          const lastAgentComment = childComments.filter((c) => c.authorAgentId).pop();
+          subtaskOutputs.push({
+            identifier: child.identifier || child.id.substring(0, 8),
+            title: child.title || "Untitled",
+            content: lastAgentComment?.body.substring(0, 3000) || "(no output)",
+          });
+        }
+      }
+
+      if (subtaskOutputs.length === 0) {
+        // No subtasks — generate brief from issue comments directly
+        const commentsRes = await fetch(`http://localhost:${port}/api/issues/${issueId}/comments`, {
+          headers, signal: AbortSignal.timeout(5000),
+        });
+        const comments = commentsRes.ok
+          ? await commentsRes.json() as Array<{ body: string; authorAgentId?: string }>
+          : [];
+        const agentComments = comments.filter((c) => c.authorAgentId && c.body.length > 50);
+        if (agentComments.length === 0) return { ok: false, error: "No agent output to summarize" };
+        subtaskOutputs.push({
+          identifier: issue.identifier || issueId.substring(0, 8),
+          title: issue.title || "Untitled",
+          content: agentComments.map((c) => c.body.substring(0, 2000)).join("\n\n"),
+        });
+      }
+
+      const brief = await generateExecutiveBrief({
+        parentTitle: issue.title || "Untitled",
+        parentIdentifier: issue.identifier || issueId,
+        subtasks: subtaskOutputs,
+        apiKey,
+        baseUrl: "https://openrouter.ai/api/v1",
+        model: cfg.kbBriefModel,
+      });
+
+      if (!brief) return { ok: false, error: "Brief generation failed" };
+
+      await client.storeKnowledgeEntry(brief, {
+        companyId,
+        title: `Executive Brief: ${issue.identifier || ""} ${issue.title || ""}`.trim(),
+        source: "executive_brief",
+        issueId: issue.id,
+        issueIdentifier: issue.identifier,
+        projectId: issue.projectId,
+      });
+
+      const kbStats = ((await ctx.state.get(kbStatsKey(companyId))) ?? emptyKBStats()) as KBStats;
+      kbStats.generatedBriefs++;
+      kbStats.lastBriefAt = new Date().toISOString();
+      await ctx.state.set(kbStatsKey(companyId), kbStats);
+
+      return { ok: true, brief };
+    });
 
     /** Search memories (action handler for UI). */
     ctx.actions.register("memory:search-action", async (params: Record<string, unknown>) => {

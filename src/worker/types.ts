@@ -42,4 +42,33 @@ export interface MemoryPluginConfig {
   injectionTokenBudget: number;
   extractionMode: "rule_based" | "llm" | "hybrid";
   llmExtractionModel: string;
+  llmFallbackModel: string;
+  // Knowledge Base
+  kbAutoIndex: boolean;
+  kbAutoBreif: boolean;
+  kbBriefModel: string;
+}
+
+/** A knowledge base entry indexed from completed work or uploaded documents. */
+export interface KBEntry {
+  id: string;
+  content: string;
+  title: string;
+  source: "issue_completion" | "document" | "executive_brief";
+  issueId?: string;
+  issueIdentifier?: string;
+  projectId?: string;
+  agentId?: string;
+  agentName?: string;
+  tags?: string[];
+  createdAt?: string;
+}
+
+/** KB stats stored in plugin state. */
+export interface KBStats {
+  indexedIssues: number;
+  uploadedDocuments: number;
+  generatedBriefs: number;
+  lastIndexAt?: string;
+  lastBriefAt?: string;
 }

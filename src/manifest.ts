@@ -6,7 +6,7 @@ const manifest: PaperclipPluginManifestV1 = {
   version: "0.1.0",
   displayName: "Agent Memory",
   description:
-    "Persistent memory across agent runs via MemOS — auto-injects context, auto-extracts learnings.",
+    "Persistent memory + Knowledge Base via MemOS — auto-extracts learnings, indexes completed work, generates executive briefs.",
   author: "Animus Systems",
   categories: ["automation", "connector"],
 
@@ -40,6 +40,23 @@ const manifest: PaperclipPluginManifestV1 = {
           query: {
             type: "string",
             description: "What to search for — describe the context you need (e.g., 'previous campaign results for client X')",
+          },
+        },
+        required: ["query"],
+      },
+    },
+    {
+      name: "search_knowledge",
+      displayName: "Search Knowledge Base",
+      description:
+        "Search completed work, research reports, and company documents. " +
+        "Use when you need context from prior completed tasks, audits, or uploaded reference material.",
+      parametersSchema: {
+        type: "object",
+        properties: {
+          query: {
+            type: "string",
+            description: "What to search for — describe what context you need",
           },
         },
         required: ["query"],
@@ -126,6 +143,24 @@ const manifest: PaperclipPluginManifestV1 = {
         title: "Fallback model (used when primary hits rate limits)",
         default: "google/gemini-2.5-flash",
       },
+      kbAutoIndex: {
+        type: "boolean",
+        title: "Auto-Index Completed Issues",
+        description: "Automatically index issue output into the Knowledge Base when issues are marked done",
+        default: true,
+      },
+      kbAutoBreif: {
+        type: "boolean",
+        title: "Auto-Generate Executive Briefs",
+        description: "Automatically generate executive briefs when decomposed tasks (with subtasks) complete",
+        default: true,
+      },
+      kbBriefModel: {
+        type: "string",
+        title: "Brief Generation Model",
+        description: "OpenRouter model for compiling executive briefs",
+        default: "deepseek/deepseek-v3.2",
+      },
     },
   },
 
@@ -149,6 +184,12 @@ const manifest: PaperclipPluginManifestV1 = {
         exportName: "MemoryAgentTab",
         entityTypes: ["agent"],
         order: 25,
+      },
+      {
+        type: "dashboardWidget",
+        id: "kb-overview",
+        displayName: "Knowledge Base",
+        exportName: "KBDashboardWidget",
       },
       {
         type: "settingsPage",

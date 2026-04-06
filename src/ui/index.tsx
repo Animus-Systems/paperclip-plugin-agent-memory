@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from "react";
-import type { PluginDetailTabProps, PluginSettingsPageProps } from "@paperclipai/plugin-sdk/ui";
+import type { PluginDashboardWidgetProps, PluginDetailTabProps, PluginSettingsPageProps } from "@paperclipai/plugin-sdk/ui";
 import {
   usePluginData,
   usePluginAction,
@@ -663,6 +663,110 @@ export function MemorySettingsPage({ context }: PluginSettingsPageProps) {
               {saveMsg}
             </span>
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════
+// KB DASHBOARD WIDGET
+// ══════════════════════════════════════════════════════════════
+
+interface KBStats {
+  indexedIssues: number;
+  uploadedDocuments: number;
+  generatedBriefs: number;
+  lastIndexAt?: string;
+  lastBriefAt?: string;
+}
+
+export function KBDashboardWidget({ context }: PluginDashboardWidgetProps) {
+  const { data: stats } = usePluginData<KBStats>("kb:stats", {
+    companyId: context.companyId,
+  });
+
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<Memory[] | null>(null);
+  const [searching, setSearching] = useState(false);
+  const searchAction = usePluginAction("kb:search");
+
+  const handleSearch = useCallback(async () => {
+    if (!query.trim()) return;
+    setSearching(true);
+    try {
+      const res = await searchAction({ companyId: context.companyId, query: query.trim() });
+      setResults(Array.isArray(res) ? res : []);
+    } catch {
+      setResults([]);
+    } finally {
+      setSearching(false);
+    }
+  }, [query, context.companyId, searchAction]);
+
+  const s = stats ?? { indexedIssues: 0, uploadedDocuments: 0, generatedBriefs: 0 };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px" }}>
+        <div style={{ textAlign: "center", padding: "8px", background: "rgba(255,255,255,0.05)", borderRadius: "6px" }}>
+          <div style={{ fontSize: "1.3rem", fontWeight: 700 }}>{s.indexedIssues}</div>
+          <div style={{ fontSize: "0.7rem", opacity: 0.6 }}>Indexed Issues</div>
+        </div>
+        <div style={{ textAlign: "center", padding: "8px", background: "rgba(255,255,255,0.05)", borderRadius: "6px" }}>
+          <div style={{ fontSize: "1.3rem", fontWeight: 700 }}>{s.uploadedDocuments}</div>
+          <div style={{ fontSize: "0.7rem", opacity: 0.6 }}>Documents</div>
+        </div>
+        <div style={{ textAlign: "center", padding: "8px", background: "rgba(255,255,255,0.05)", borderRadius: "6px" }}>
+          <div style={{ fontSize: "1.3rem", fontWeight: 700 }}>{s.generatedBriefs}</div>
+          <div style={{ fontSize: "0.7rem", opacity: 0.6 }}>Briefs</div>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: "6px" }}>
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+          placeholder="Search knowledge base..."
+          style={{
+            flex: 1, padding: "6px 10px", fontSize: "0.85rem",
+            background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)",
+            borderRadius: "5px", color: "inherit", outline: "none",
+          }}
+        />
+        <button
+          onClick={handleSearch}
+          disabled={searching || !query.trim()}
+          style={{
+            padding: "6px 12px", fontSize: "0.8rem",
+            background: "rgba(59,130,246,0.8)", border: "none",
+            borderRadius: "5px", color: "#fff", cursor: "pointer",
+            opacity: searching ? 0.5 : 1,
+          }}
+        >
+          {searching ? "..." : "Search"}
+        </button>
+      </div>
+
+      {results !== null && (
+        <div style={{ maxHeight: "200px", overflowY: "auto", fontSize: "0.8rem" }}>
+          {results.length === 0 ? (
+            <div style={{ opacity: 0.5, padding: "8px" }}>No results found.</div>
+          ) : (
+            results.slice(0, 5).map((r, i) => (
+              <div key={r.id || i} style={{ padding: "8px", borderBottom: "1px solid rgba(255,255,255,0.06)", lineHeight: 1.4 }}>
+                {r.content.substring(0, 200)}{r.content.length > 200 ? "..." : ""}
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
+      {s.lastIndexAt && (
+        <div style={{ fontSize: "0.7rem", opacity: 0.4 }}>
+          Last indexed: {new Date(s.lastIndexAt).toLocaleString()}
         </div>
       )}
     </div>

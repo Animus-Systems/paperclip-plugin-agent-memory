@@ -1,6 +1,6 @@
-# Agent Memory — Paperclip Plugin
+# Agent Memory + Knowledge Base — Paperclip Plugin
 
-Persistent memory for Paperclip agents via [MemOS](https://github.com/MemTensor/MemOS). Agents automatically build evolving knowledge across runs — skills, procedures, preferences, and learnings are extracted, stored, and injected into future prompts.
+Persistent memory and Knowledge Base for Paperclip agents via [MemOS](https://github.com/MemTensor/MemOS). Agents automatically build evolving knowledge across runs, completed work is indexed into a searchable Knowledge Base, and executive briefs are auto-generated for decomposed tasks.
 
 ## How It Works
 
@@ -128,16 +128,29 @@ npm install && npm run build
 
 ## Agent Tools
 
-Agents have two memory tools available during runs:
+Agents have three tools available during runs:
 
-- **`save_memory`** — Explicitly save a learning, decision, or fact
-- **`search_memories`** — Search for relevant context from previous runs
+- **`recall_memories`** — Search for relevant context from previous runs
+- **`store_memory`** — Explicitly save a learning, decision, or fact
+- **`search_knowledge`** — Search the Knowledge Base (completed work, uploaded documents, executive briefs)
+
+## Knowledge Base
+
+The Knowledge Base extends the memory system with company-wide searchable knowledge:
+
+- **Auto-indexing** — when any issue is marked "done", the output (title, description, final agent comments) is automatically indexed into MemOS
+- **Document upload** — upload company documents (PDFs, contracts, policies) via the dashboard widget or `kb:upload-document` action
+- **Executive briefs** — when a parent issue with all subtasks complete is closed, an LLM-generated executive brief is automatically created and posted as a comment
+- **`search_knowledge` tool** — any agent can search across all indexed work and uploaded documents
+
+KB entries are stored in MemOS as a dedicated company-scoped user (`kb-{companyId}`), tagged with `[type: knowledge_base]` metadata for filtered search.
 
 ## Plugin UI
 
-- **Dashboard Widget** — MemOS status, knowledge object counts per agent, activity feed
+- **Dashboard Widget: Agent Memory** — MemOS status, knowledge object counts per agent, activity feed
+- **Dashboard Widget: Knowledge Base** — KB stats (indexed issues, documents, briefs), search bar with results
 - **Agent Memory Tab** — Browse knowledge objects, search, manually add entries
-- **Settings Page** — Infrastructure details, stats, plugin configuration
+- **Settings Page** — Infrastructure details, stats, plugin configuration (memory + KB settings)
 
 ## Development
 

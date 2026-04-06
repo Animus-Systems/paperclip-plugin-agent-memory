@@ -574,7 +574,94 @@ function MemorySettingsPage({ context }) {
     ] })
   ] });
 }
+function KBDashboardWidget({ context }) {
+  const { data: stats } = usePluginData("kb:stats", {
+    companyId: context.companyId
+  });
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState(null);
+  const [searching, setSearching] = useState(false);
+  const searchAction = usePluginAction("kb:search");
+  const handleSearch = useCallback(async () => {
+    if (!query.trim()) return;
+    setSearching(true);
+    try {
+      const res = await searchAction({ companyId: context.companyId, query: query.trim() });
+      setResults(Array.isArray(res) ? res : []);
+    } catch {
+      setResults([]);
+    } finally {
+      setSearching(false);
+    }
+  }, [query, context.companyId, searchAction]);
+  const s = stats ?? { indexedIssues: 0, uploadedDocuments: 0, generatedBriefs: 0 };
+  return /* @__PURE__ */ jsxs("div", { style: { display: "flex", flexDirection: "column", gap: "12px" }, children: [
+    /* @__PURE__ */ jsxs("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px" }, children: [
+      /* @__PURE__ */ jsxs("div", { style: { textAlign: "center", padding: "8px", background: "rgba(255,255,255,0.05)", borderRadius: "6px" }, children: [
+        /* @__PURE__ */ jsx("div", { style: { fontSize: "1.3rem", fontWeight: 700 }, children: s.indexedIssues }),
+        /* @__PURE__ */ jsx("div", { style: { fontSize: "0.7rem", opacity: 0.6 }, children: "Indexed Issues" })
+      ] }),
+      /* @__PURE__ */ jsxs("div", { style: { textAlign: "center", padding: "8px", background: "rgba(255,255,255,0.05)", borderRadius: "6px" }, children: [
+        /* @__PURE__ */ jsx("div", { style: { fontSize: "1.3rem", fontWeight: 700 }, children: s.uploadedDocuments }),
+        /* @__PURE__ */ jsx("div", { style: { fontSize: "0.7rem", opacity: 0.6 }, children: "Documents" })
+      ] }),
+      /* @__PURE__ */ jsxs("div", { style: { textAlign: "center", padding: "8px", background: "rgba(255,255,255,0.05)", borderRadius: "6px" }, children: [
+        /* @__PURE__ */ jsx("div", { style: { fontSize: "1.3rem", fontWeight: 700 }, children: s.generatedBriefs }),
+        /* @__PURE__ */ jsx("div", { style: { fontSize: "0.7rem", opacity: 0.6 }, children: "Briefs" })
+      ] })
+    ] }),
+    /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: "6px" }, children: [
+      /* @__PURE__ */ jsx(
+        "input",
+        {
+          type: "text",
+          value: query,
+          onChange: (e) => setQuery(e.target.value),
+          onKeyDown: (e) => e.key === "Enter" && handleSearch(),
+          placeholder: "Search knowledge base...",
+          style: {
+            flex: 1,
+            padding: "6px 10px",
+            fontSize: "0.85rem",
+            background: "rgba(255,255,255,0.06)",
+            border: "1px solid rgba(255,255,255,0.12)",
+            borderRadius: "5px",
+            color: "inherit",
+            outline: "none"
+          }
+        }
+      ),
+      /* @__PURE__ */ jsx(
+        "button",
+        {
+          onClick: handleSearch,
+          disabled: searching || !query.trim(),
+          style: {
+            padding: "6px 12px",
+            fontSize: "0.8rem",
+            background: "rgba(59,130,246,0.8)",
+            border: "none",
+            borderRadius: "5px",
+            color: "#fff",
+            cursor: "pointer",
+            opacity: searching ? 0.5 : 1
+          },
+          children: searching ? "..." : "Search"
+        }
+      )
+    ] }),
+    results !== null && /* @__PURE__ */ jsx("div", { style: { maxHeight: "200px", overflowY: "auto", fontSize: "0.8rem" }, children: results.length === 0 ? /* @__PURE__ */ jsx("div", { style: { opacity: 0.5, padding: "8px" }, children: "No results found." }) : results.slice(0, 5).map((r, i) => /* @__PURE__ */ jsxs("div", { style: { padding: "8px", borderBottom: "1px solid rgba(255,255,255,0.06)", lineHeight: 1.4 }, children: [
+      r.content.substring(0, 200),
+      r.content.length > 200 ? "..." : ""
+    ] }, r.id || i)) }),
+    s.lastIndexAt && /* @__PURE__ */ jsxs("div", { style: { fontSize: "0.7rem", opacity: 0.4 }, children: [
+      "Last indexed: ",
+      new Date(s.lastIndexAt).toLocaleString()
+    ] })
+  ] });
+}
 export {
+  KBDashboardWidget,
   MemoryAgentTab,
   MemoryDashboardWidget,
   MemorySettingsPage

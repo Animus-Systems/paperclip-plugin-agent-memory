@@ -188,6 +188,87 @@ export class MemosClient {
     }
   }
 
+  // ── Knowledge Base ──────────────────────────────────────────
+
+  /** Store a knowledge base entry (completed work or document). */
+  async storeKnowledgeEntry(
+    content: string,
+    opts: {
+      companyId: string;
+      title: string;
+      source: "issue_completion" | "document" | "executive_brief";
+      issueId?: string;
+      issueIdentifier?: string;
+      projectId?: string;
+      agentId?: string;
+      agentName?: string;
+      tags?: string[];
+    },
+  ): Promise<void> {
+    const kbUserId = `kb-${opts.companyId}`;
+    await this.registerUser(kbUserId, "Knowledge Base");
+
+    const metaParts = [
+      content,
+      `[type: knowledge_base]`,
+      `[kb_source: ${opts.source}]`,
+      `[title: ${opts.title}]`,
+    ];
+    if (opts.issueIdentifier) metaParts.push(`[issue: ${opts.issueIdentifier}]`);
+    if (opts.issueId) metaParts.push(`[issue_id: ${opts.issueId}]`);
+    if (opts.projectId) metaParts.push(`[project: ${opts.projectId}]`);
+    if (opts.agentId) metaParts.push(`[agent_id: ${opts.agentId}]`);
+    if (opts.agentName) metaParts.push(`[agent: ${opts.agentName}]`);
+    if (opts.tags?.length) metaParts.push(`[tags: ${opts.tags.join(", ")}]`);
+
+    const res = await fetch(`${this.baseUrl}/product/add`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        user_id: kbUserId,
+        writable_cube_ids: [opts.companyId],
+        messages: [{ role: "assistant", content: metaParts.join("\n") }],
+        async_mode: "sync",
+      }),
+      signal: AbortSignal.timeout(30_000),
+    });
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`MemOS KB store failed (${res.status}): ${text.substring(0, 200)}`);
+    }
+  }
+
+  /** Search the knowledge base (completed work + documents). */
+  async searchKnowledge(
+    query: string,
+    companyId: string,
+    topK = 8,
+  ): Promise<Memory[]> {
+    const kbUserId = `kb-${companyId}`;
+    return this.searchMemories(query, kbUserId, companyId, topK);
+  }
+
+  /** Store a document in the KB (chunked if large). */
+  async storeDocument(
+    name: string,
+    content: string,
+    companyId: string,
+    tags?: string[],
+  ): Promise<{ chunkCount: number }> {
+    const chunks = this.chunkText(content, 2000);
+    for (let i = 0; i < chunks.length; i++) {
+      const chunkLabel = chunks.length > 1 ? ` (part ${i + 1}/${chunks.length})` : "";
+      await this.storeKnowledgeEntry(chunks[i], {
+        companyId,
+        title: `${name}${chunkLabel}`,
+        source: "document",
+        tags,
+      });
+    }
+    return { chunkCount: chunks.length };
+  }
+
   // ── Helpers ────────────────────────────────────────────────
 
   /** Format memory content with metadata tags for retrieval. */
@@ -199,5 +280,22 @@ export class MemosClient {
     if (meta.tags?.length) parts.push(`[tags: ${meta.tags.join(", ")}]`);
     if (meta.source) parts.push(`[source: ${meta.source}]`);
     return parts.join("\n");
+  }
+
+  /** Split text into chunks at paragraph boundaries. */
+  private chunkText(text: string, maxChars: number): string[] {
+    if (text.length <= maxChars) return [text];
+    const paragraphs = text.split(/\n\n+/);
+    const chunks: string[] = [];
+    let current = "";
+    for (const p of paragraphs) {
+      if (current.length + p.length + 2 > maxChars && current.length > 0) {
+        chunks.push(current.trim());
+        current = "";
+      }
+      current += (current ? "\n\n" : "") + p;
+    }
+    if (current.trim()) chunks.push(current.trim());
+    return chunks.length > 0 ? chunks : [text.substring(0, maxChars)];
   }
 }

@@ -1259,6 +1259,51 @@ ${issue.description.substring(0, 1e3)}` : "",
       if (!query || !companyId) return [];
       return client.searchKnowledge(query, companyId, 10);
     });
+    ctx.data.register("kb:list-documents", async (params) => {
+      const companyId = params.companyId;
+      if (!companyId) return [];
+      const results = await client.searchKnowledge("*", companyId, 50);
+      return results.map((r) => {
+        const titleMatch = r.content.match(/\[title: ([^\]]+)\]/);
+        const sourceMatch = r.content.match(/\[kb_source: ([^\]]+)\]/);
+        const issueMatch = r.content.match(/\[issue: ([^\]]+)\]/);
+        const agentMatch = r.content.match(/\[agent: ([^\]]+)\]/);
+        return {
+          id: r.id,
+          title: titleMatch?.[1] ?? r.content.substring(0, 60),
+          source: sourceMatch?.[1] ?? "unknown",
+          issue: issueMatch?.[1] ?? null,
+          agent: agentMatch?.[1] ?? null,
+          excerpt: r.content.replace(/\[[\w_]+: [^\]]+\]/g, "").trim().substring(0, 200),
+          score: r.score
+        };
+      });
+    });
+    ctx.data.register("kb:list-briefs", async (params) => {
+      const companyId = params.companyId;
+      if (!companyId) return [];
+      const results = await client.searchKnowledge("Executive Brief", companyId, 20);
+      return results.filter((r) => r.content.includes("[kb_source: executive_brief]")).map((r) => {
+        const titleMatch = r.content.match(/\[title: ([^\]]+)\]/);
+        const issueMatch = r.content.match(/\[issue: ([^\]]+)\]/);
+        return {
+          id: r.id,
+          title: titleMatch?.[1] ?? "Untitled Brief",
+          issue: issueMatch?.[1] ?? null,
+          content: r.content.replace(/\[[\w_]+: [^\]]+\]/g, "").trim()
+        };
+      });
+    });
+    ctx.data.register("kb:indexed-folders", async (params) => {
+      const companyId = params.companyId;
+      if (!companyId) return { watchFolders: [], hashCount: 0 };
+      const latestRaw = await ctx.config.get();
+      const latestCfg = { ...DEFAULT_CONFIG, ...latestRaw };
+      const watchFolders = latestCfg.kbWatchFolders ?? [];
+      const manifestKey = { scopeKind: "company", scopeId: companyId, stateKey: "kb-file-hashes" };
+      const hashes = await ctx.state.get(manifestKey) ?? {};
+      return { watchFolders, hashCount: Object.keys(hashes).length };
+    });
     ctx.actions.register("kb:upload-document", async (params) => {
       const companyId = params.companyId;
       const name = params.name;

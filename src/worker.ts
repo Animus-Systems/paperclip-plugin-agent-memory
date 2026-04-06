@@ -737,6 +737,61 @@ const plugin = definePlugin({
       return client.searchKnowledge(query, companyId, 10);
     });
 
+    /** List all KB entries (documents, indexed issues, briefs). */
+    ctx.data.register("kb:list-documents", async (params: Record<string, unknown>) => {
+      const companyId = params.companyId as string;
+      if (!companyId) return [];
+      // Search broadly to get all KB entries
+      const results = await client.searchKnowledge("*", companyId, 50);
+      return results.map((r) => {
+        // Parse metadata tags from content
+        const titleMatch = r.content.match(/\[title: ([^\]]+)\]/);
+        const sourceMatch = r.content.match(/\[kb_source: ([^\]]+)\]/);
+        const issueMatch = r.content.match(/\[issue: ([^\]]+)\]/);
+        const agentMatch = r.content.match(/\[agent: ([^\]]+)\]/);
+        return {
+          id: r.id,
+          title: titleMatch?.[1] ?? r.content.substring(0, 60),
+          source: sourceMatch?.[1] ?? "unknown",
+          issue: issueMatch?.[1] ?? null,
+          agent: agentMatch?.[1] ?? null,
+          excerpt: r.content.replace(/\[[\w_]+: [^\]]+\]/g, "").trim().substring(0, 200),
+          score: r.score,
+        };
+      });
+    });
+
+    /** List executive briefs only. */
+    ctx.data.register("kb:list-briefs", async (params: Record<string, unknown>) => {
+      const companyId = params.companyId as string;
+      if (!companyId) return [];
+      const results = await client.searchKnowledge("Executive Brief", companyId, 20);
+      return results
+        .filter((r) => r.content.includes("[kb_source: executive_brief]"))
+        .map((r) => {
+          const titleMatch = r.content.match(/\[title: ([^\]]+)\]/);
+          const issueMatch = r.content.match(/\[issue: ([^\]]+)\]/);
+          return {
+            id: r.id,
+            title: titleMatch?.[1] ?? "Untitled Brief",
+            issue: issueMatch?.[1] ?? null,
+            content: r.content.replace(/\[[\w_]+: [^\]]+\]/g, "").trim(),
+          };
+        });
+    });
+
+    /** List watched folders with last-index info. */
+    ctx.data.register("kb:indexed-folders", async (params: Record<string, unknown>) => {
+      const companyId = params.companyId as string;
+      if (!companyId) return { watchFolders: [], hashCount: 0 };
+      const latestRaw = await ctx.config.get();
+      const latestCfg = { ...DEFAULT_CONFIG, ...(latestRaw as Record<string, unknown>) };
+      const watchFolders = (latestCfg.kbWatchFolders ?? []) as string[];
+      const manifestKey: ScopeKey = { scopeKind: "company", scopeId: companyId, stateKey: "kb-file-hashes" };
+      const hashes = ((await ctx.state.get(manifestKey)) ?? {}) as Record<string, string>;
+      return { watchFolders, hashCount: Object.keys(hashes).length };
+    });
+
     // ══════════════════════════════════════════════════════════
     // ACTION HANDLERS — UI-triggered operations
     // ══════════════════════════════════════════════════════════

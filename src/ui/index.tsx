@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from "react";
-import type { PluginDashboardWidgetProps, PluginDetailTabProps, PluginSettingsPageProps } from "@paperclipai/plugin-sdk/ui";
+import type { PluginDashboardWidgetProps, PluginDetailTabProps, PluginPageProps, PluginSettingsPageProps, PluginSidebarProps } from "@paperclipai/plugin-sdk/ui";
 import {
   usePluginData,
   usePluginAction,
@@ -840,6 +840,379 @@ export function KBDashboardWidget({ context }: PluginDashboardWidgetProps) {
           Last indexed: {new Date(s.lastIndexAt).toLocaleString()}
         </div>
       )}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════
+// KB SIDEBAR LINK
+// ══════════════════════════════════════════════════════════════
+
+const KB_ROUTE = "knowledge-base";
+
+export function KBSidebarLink({ context }: PluginSidebarProps) {
+  const href = context.companyPrefix ? `/${context.companyPrefix}/${KB_ROUTE}` : `/${KB_ROUTE}`;
+  const isActive = typeof window !== "undefined" && window.location.pathname === href;
+  return (
+    <a
+      href={href}
+      aria-current={isActive ? "page" : undefined}
+      className={[
+        "flex items-center gap-2.5 px-3 py-2 text-[13px] font-medium transition-colors",
+        isActive ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground",
+      ].join(" ")}
+    >
+      <span className="flex h-5 w-5 items-center justify-center">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />
+        </svg>
+      </span>
+      <span className="flex-1 truncate">Knowledge Base</span>
+    </a>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════
+// KB FULL PAGE
+// ══════════════════════════════════════════════════════════════
+
+interface KBDocEntry { id: string; title: string; source: string; issue: string | null; agent: string | null; excerpt: string; score?: number; }
+interface KBBrief { id: string; title: string; issue: string | null; content: string; }
+interface KBFolderInfo { watchFolders: string[]; hashCount: number; }
+
+const pageBg: React.CSSProperties = { padding: "1.5rem 2rem", maxWidth: 960, margin: "0 auto" };
+const tabBar: React.CSSProperties = { display: "flex", gap: 2, borderBottom: "1px solid rgba(255,255,255,0.08)", marginBottom: 16 };
+const tabStyle = (active: boolean): React.CSSProperties => ({
+  padding: "8px 16px", fontSize: "0.85rem", fontWeight: 500, cursor: "pointer",
+  borderBottom: active ? "2px solid rgb(99,102,241)" : "2px solid transparent",
+  color: active ? "#fff" : "rgba(255,255,255,0.5)", background: "none", border: "none",
+  borderBottomStyle: "solid",
+});
+const cardStyle: React.CSSProperties = { background: "rgba(255,255,255,0.03)", borderRadius: 8, border: "1px solid rgba(255,255,255,0.06)", marginBottom: 12 };
+const rowStyle: React.CSSProperties = { padding: "10px 14px", borderBottom: "1px solid rgba(255,255,255,0.04)", fontSize: "0.85rem" };
+const badgeStyle = (color: string): React.CSSProperties => ({ display: "inline-block", padding: "1px 6px", borderRadius: 3, fontSize: "0.7rem", fontWeight: 500, background: `${color}22`, color, marginRight: 4 });
+const inputCss: React.CSSProperties = { padding: "8px 12px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.06)", color: "#fff", fontSize: "0.85rem", outline: "none", width: "100%" };
+const btnPrimary: React.CSSProperties = { padding: "8px 18px", borderRadius: 6, border: "none", background: "rgba(99,102,241,0.3)", color: "rgb(165,168,255)", fontSize: "0.85rem", fontWeight: 500, cursor: "pointer" };
+const btnDanger: React.CSSProperties = { padding: "4px 10px", borderRadius: 4, border: "none", background: "rgba(239,68,68,0.15)", color: "rgb(252,165,165)", fontSize: "0.75rem", cursor: "pointer" };
+const mutedSm: React.CSSProperties = { fontSize: "0.75rem", color: "rgba(255,255,255,0.4)" };
+
+const SOURCE_COLORS: Record<string, string> = {
+  issue_completion: "rgb(34,197,94)",
+  document: "rgb(59,130,246)",
+  executive_brief: "rgb(168,85,247)",
+  unknown: "rgb(161,161,170)",
+};
+
+export function KBPage({ context }: PluginPageProps) {
+  const [tab, setTab] = useState<"search" | "documents" | "folders" | "briefs" | "stats">("search");
+
+  return (
+    <div style={pageBg}>
+      <h2 style={{ fontSize: "1.2rem", fontWeight: 700, color: "#fff", marginBottom: 12 }}>Knowledge Base</h2>
+      <div style={tabBar}>
+        {(["search", "documents", "folders", "briefs", "stats"] as const).map((t) => (
+          <button key={t} style={tabStyle(tab === t)} onClick={() => setTab(t)}>
+            {t.charAt(0).toUpperCase() + t.slice(1)}
+          </button>
+        ))}
+      </div>
+      {tab === "search" && <KBSearchTab companyId={context.companyId} />}
+      {tab === "documents" && <KBDocumentsTab companyId={context.companyId} />}
+      {tab === "folders" && <KBFoldersTab companyId={context.companyId} />}
+      {tab === "briefs" && <KBBriefsTab companyId={context.companyId} />}
+      {tab === "stats" && <KBStatsTab companyId={context.companyId} />}
+    </div>
+  );
+}
+
+// ── Search Tab ──────────────────────────────────────────────
+
+function KBSearchTab({ companyId }: { companyId: string }) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<Memory[] | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const searchAction = usePluginAction("kb:search");
+
+  const doSearch = useCallback(async () => {
+    if (!query.trim()) return;
+    setSearching(true);
+    try {
+      const res = await searchAction({ companyId, query: query.trim() });
+      setResults(Array.isArray(res) ? res : []);
+    } catch { setResults([]); }
+    finally { setSearching(false); }
+  }, [query, companyId, searchAction]);
+
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        <input
+          style={{ ...inputCss, flex: 1, fontSize: "1rem", padding: "10px 14px" }}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && doSearch()}
+          placeholder="Search completed work, documents, briefs..."
+        />
+        <button style={btnPrimary} onClick={doSearch} disabled={searching}>
+          {searching ? "Searching..." : "Search"}
+        </button>
+      </div>
+      {results !== null && results.length === 0 && (
+        <div style={{ ...mutedSm, padding: 20, textAlign: "center" }}>No results found.</div>
+      )}
+      {results && results.map((r, i) => {
+        const titleMatch = r.content.match(/\[title: ([^\]]+)\]/);
+        const sourceMatch = r.content.match(/\[kb_source: ([^\]]+)\]/);
+        const agentMatch = r.content.match(/\[agent: ([^\]]+)\]/);
+        const issueMatch = r.content.match(/\[issue: ([^\]]+)\]/);
+        const cleanContent = r.content.replace(/\[[\w_]+: [^\]]+\]/g, "").trim();
+        const source = sourceMatch?.[1] ?? "unknown";
+        const isExpanded = expanded === (r.id || String(i));
+        return (
+          <div key={r.id || i} style={cardStyle}>
+            <div
+              style={{ ...rowStyle, cursor: "pointer", borderBottom: isExpanded ? "1px solid rgba(255,255,255,0.06)" : "none" }}
+              onClick={() => setExpanded(isExpanded ? null : (r.id || String(i)))}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                <span style={badgeStyle(SOURCE_COLORS[source] ?? SOURCE_COLORS.unknown)}>{source.replace("_", " ")}</span>
+                <span style={{ fontWeight: 600, color: "#fff" }}>{titleMatch?.[1] ?? "Untitled"}</span>
+                {issueMatch && <span style={mutedSm}>{issueMatch[1]}</span>}
+                {agentMatch && <span style={mutedSm}>by {agentMatch[1]}</span>}
+                <span style={{ ...mutedSm, marginLeft: "auto" }}>{isExpanded ? "▾" : "▸"}</span>
+              </div>
+              {!isExpanded && <div style={{ ...mutedSm, lineHeight: 1.4 }}>{cleanContent.substring(0, 150)}...</div>}
+            </div>
+            {isExpanded && (
+              <div style={{ padding: "12px 14px", fontSize: "0.85rem", color: "rgba(255,255,255,0.8)", lineHeight: 1.6, whiteSpace: "pre-wrap", maxHeight: 400, overflowY: "auto" }}>
+                {cleanContent}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Documents Tab ───────────────────────────────────────────
+
+function KBDocumentsTab({ companyId }: { companyId: string }) {
+  const { data: docs } = usePluginData<KBDocEntry[]>("kb:list-documents", { companyId });
+  const [uploadName, setUploadName] = useState("");
+  const [uploadContent, setUploadContent] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const uploadAction = usePluginAction("kb:upload-document");
+
+  const handleUpload = useCallback(async () => {
+    if (!uploadName.trim() || !uploadContent.trim()) return;
+    setUploading(true);
+    try {
+      await uploadAction({ companyId, name: uploadName.trim(), content: uploadContent.trim() });
+      setUploadName(""); setUploadContent("");
+    } catch { /* */ }
+    setUploading(false);
+  }, [uploadName, uploadContent, companyId, uploadAction]);
+
+  return (
+    <div>
+      {/* Upload form */}
+      <div style={{ ...cardStyle, padding: 14 }}>
+        <div style={{ fontSize: "0.8rem", fontWeight: 600, color: "rgba(255,255,255,0.6)", marginBottom: 8 }}>Upload Document</div>
+        <input style={{ ...inputCss, marginBottom: 8 }} value={uploadName} onChange={(e) => setUploadName(e.target.value)} placeholder="Document name" />
+        <textarea style={{ ...inputCss, minHeight: 80, resize: "vertical", fontFamily: "monospace", fontSize: "0.8rem" }} value={uploadContent} onChange={(e) => setUploadContent(e.target.value)} placeholder="Paste document content here..." />
+        <div style={{ marginTop: 8 }}>
+          <button style={btnPrimary} onClick={handleUpload} disabled={uploading || !uploadName.trim() || !uploadContent.trim()}>
+            {uploading ? "Uploading..." : "Upload"}
+          </button>
+        </div>
+      </div>
+
+      {/* Document list */}
+      <div style={{ fontSize: "0.8rem", fontWeight: 600, color: "rgba(255,255,255,0.6)", marginTop: 16, marginBottom: 8 }}>
+        {(docs ?? []).length} documents indexed
+      </div>
+      {(docs ?? []).map((d) => (
+        <div key={d.id} style={{ ...rowStyle, display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={badgeStyle(SOURCE_COLORS[d.source] ?? SOURCE_COLORS.unknown)}>{d.source.replace("_", " ")}</span>
+          <span style={{ fontWeight: 500, color: "#fff", flex: 1 }}>{d.title}</span>
+          {d.issue && <span style={mutedSm}>{d.issue}</span>}
+          {d.agent && <span style={mutedSm}>{d.agent}</span>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Folders Tab ─────────────────────────────────────────────
+
+function KBFoldersTab({ companyId }: { companyId: string }) {
+  const { data: info } = usePluginData<KBFolderInfo>("kb:indexed-folders", { companyId });
+  const [newFolder, setNewFolder] = useState("");
+  const [indexing, setIndexing] = useState<string | null>(null);
+  const indexAction = usePluginAction("kb:index-folder");
+
+  const handleIndex = useCallback(async (path: string) => {
+    setIndexing(path);
+    try {
+      const res = await indexAction({ companyId, path, recursive: true }) as Record<string, unknown>;
+      alert(res.ok ? `Indexed ${res.indexed} new files (${res.unchanged} unchanged, ${res.skipped} skipped)` : `Error: ${res.error}`);
+    } catch (err) { alert(`Failed: ${err}`); }
+    setIndexing(null);
+  }, [companyId, indexAction]);
+
+  const folders = info?.watchFolders ?? [];
+
+  return (
+    <div>
+      {/* Index new folder */}
+      <div style={{ ...cardStyle, padding: 14 }}>
+        <div style={{ fontSize: "0.8rem", fontWeight: 600, color: "rgba(255,255,255,0.6)", marginBottom: 8 }}>Index a Folder</div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input style={{ ...inputCss, flex: 1 }} value={newFolder} onChange={(e) => setNewFolder(e.target.value)} placeholder="/data/accounts/Animus-Systems-SL" />
+          <button style={btnPrimary} onClick={() => { if (newFolder.trim()) handleIndex(newFolder.trim()); }} disabled={!!indexing || !newFolder.trim()}>
+            {indexing === newFolder ? "Indexing..." : "Index Now"}
+          </button>
+        </div>
+      </div>
+
+      {/* Watch folders */}
+      <div style={{ fontSize: "0.8rem", fontWeight: 600, color: "rgba(255,255,255,0.6)", marginTop: 16, marginBottom: 8 }}>
+        Watch Folders ({folders.length}) · {info?.hashCount ?? 0} files tracked
+      </div>
+      {folders.length === 0 ? (
+        <div style={{ ...mutedSm, padding: 12 }}>No watch folders configured. Add them in Agent Memory Settings.</div>
+      ) : (
+        folders.map((f) => (
+          <div key={f} style={{ ...rowStyle, display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontFamily: "monospace", fontSize: "0.8rem", color: "#fff", flex: 1 }}>{f}</span>
+            <button
+              style={{ ...btnPrimary, padding: "4px 12px", fontSize: "0.75rem" }}
+              onClick={() => handleIndex(f)}
+              disabled={!!indexing}
+            >
+              {indexing === f ? "..." : "Re-index"}
+            </button>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
+// ── Briefs Tab ──────────────────────────────────────────────
+
+function KBBriefsTab({ companyId }: { companyId: string }) {
+  const { data: briefs } = usePluginData<KBBrief[]>("kb:list-briefs", { companyId });
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [issueId, setIssueId] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const briefAction = usePluginAction("kb:generate-brief");
+
+  const handleGenerate = useCallback(async () => {
+    if (!issueId.trim()) return;
+    setGenerating(true);
+    try {
+      const res = await briefAction({ companyId, issueId: issueId.trim() }) as Record<string, unknown>;
+      if (res.ok) {
+        alert("Brief generated successfully!");
+        setIssueId("");
+      } else {
+        alert(`Error: ${res.error}`);
+      }
+    } catch (err) { alert(`Failed: ${err}`); }
+    setGenerating(false);
+  }, [issueId, companyId, briefAction]);
+
+  return (
+    <div>
+      {/* Generate brief */}
+      <div style={{ ...cardStyle, padding: 14 }}>
+        <div style={{ fontSize: "0.8rem", fontWeight: 600, color: "rgba(255,255,255,0.6)", marginBottom: 8 }}>Generate Executive Brief</div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input style={{ ...inputCss, flex: 1 }} value={issueId} onChange={(e) => setIssueId(e.target.value)} placeholder="Issue ID (e.g. ANI-877)" />
+          <button style={btnPrimary} onClick={handleGenerate} disabled={generating || !issueId.trim()}>
+            {generating ? "Generating..." : "Generate"}
+          </button>
+        </div>
+      </div>
+
+      {/* Briefs list */}
+      <div style={{ fontSize: "0.8rem", fontWeight: 600, color: "rgba(255,255,255,0.6)", marginTop: 16, marginBottom: 8 }}>
+        {(briefs ?? []).length} executive briefs
+      </div>
+      {(briefs ?? []).map((b) => {
+        const isExpanded = expanded === b.id;
+        return (
+          <div key={b.id} style={cardStyle}>
+            <div style={{ ...rowStyle, cursor: "pointer" }} onClick={() => setExpanded(isExpanded ? null : b.id)}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={badgeStyle("rgb(168,85,247)")}>brief</span>
+                <span style={{ fontWeight: 500, color: "#fff" }}>{b.title}</span>
+                {b.issue && <span style={mutedSm}>{b.issue}</span>}
+                <span style={{ ...mutedSm, marginLeft: "auto" }}>{isExpanded ? "▾" : "▸"}</span>
+              </div>
+            </div>
+            {isExpanded && (
+              <div style={{ padding: "12px 14px", fontSize: "0.85rem", color: "rgba(255,255,255,0.8)", lineHeight: 1.6, whiteSpace: "pre-wrap", maxHeight: 500, overflowY: "auto" }}>
+                {b.content}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Stats Tab ───────────────────────────────────────────────
+
+function KBStatsTab({ companyId }: { companyId: string }) {
+  const { data: stats } = usePluginData<KBStats>("kb:stats", { companyId });
+  const { data: folders } = usePluginData<KBFolderInfo>("kb:indexed-folders", { companyId });
+  const { data: status } = usePluginData<MemosStatus>("memory:status", { companyId });
+
+  const s = stats ?? { indexedIssues: 0, uploadedDocuments: 0, generatedBriefs: 0 };
+  const connected = (status as Record<string, unknown> | null)?.memosConnected ?? false;
+
+  return (
+    <div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 12, marginBottom: 16 }}>
+        {[
+          { label: "Indexed Issues", value: s.indexedIssues },
+          { label: "Documents", value: s.uploadedDocuments },
+          { label: "Briefs", value: s.generatedBriefs },
+          { label: "Tracked Files", value: folders?.hashCount ?? 0 },
+        ].map((item) => (
+          <div key={item.label} style={{ textAlign: "center", padding: 14, ...cardStyle }}>
+            <div style={{ fontSize: "1.5rem", fontWeight: 700, color: "#fff" }}>{item.value}</div>
+            <div style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.5)" }}>{item.label}</div>
+          </div>
+        ))}
+      </div>
+      <div style={cardStyle}>
+        <div style={rowStyle}>
+          <span style={{ color: "rgba(255,255,255,0.5)" }}>MemOS</span>
+          <span style={{ float: "right", color: connected ? "rgb(34,197,94)" : "rgb(239,68,68)" }}>{connected ? "Connected" : "Disconnected"}</span>
+        </div>
+        <div style={rowStyle}>
+          <span style={{ color: "rgba(255,255,255,0.5)" }}>Watch Folders</span>
+          <span style={{ float: "right", color: "#fff" }}>{folders?.watchFolders?.length ?? 0}</span>
+        </div>
+        {s.lastIndexAt && (
+          <div style={rowStyle}>
+            <span style={{ color: "rgba(255,255,255,0.5)" }}>Last Indexed</span>
+            <span style={{ float: "right", color: "#fff" }}>{new Date(s.lastIndexAt).toLocaleString()}</span>
+          </div>
+        )}
+        {s.lastBriefAt && (
+          <div style={{ ...rowStyle, borderBottom: "none" }}>
+            <span style={{ color: "rgba(255,255,255,0.5)" }}>Last Brief</span>
+            <span style={{ float: "right", color: "#fff" }}>{new Date(s.lastBriefAt).toLocaleString()}</span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

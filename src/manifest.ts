@@ -220,6 +220,19 @@ const manifest: PaperclipPluginManifestV1 = {
         exportName: "KBDashboardWidget",
       },
       {
+        type: "page",
+        id: "kb-page",
+        displayName: "Knowledge Base",
+        exportName: "KBPage",
+        routePath: "knowledge-base",
+      },
+      {
+        type: "sidebar",
+        id: "kb-sidebar",
+        displayName: "Knowledge Base",
+        exportName: "KBSidebarLink",
+      },
+      {
         type: "settingsPage",
         id: "memory-settings",
         displayName: "Agent Memory Settings",

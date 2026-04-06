@@ -244,7 +244,7 @@ function MemoryAgentTab({ context }) {
       ] })
     ] }, mem.id || i);
   };
-  const tabStyle = (active) => ({
+  const tabStyle2 = (active) => ({
     padding: "6px 14px",
     borderRadius: 6,
     fontSize: "0.8rem",
@@ -266,12 +266,12 @@ function MemoryAgentTab({ context }) {
   };
   return /* @__PURE__ */ jsxs("div", { style: { padding: "1rem", display: "flex", flexDirection: "column", gap: "1rem" }, children: [
     /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 4 }, children: [
-      /* @__PURE__ */ jsxs("button", { style: tabStyle(tab === "knowledge"), onClick: () => setTab("knowledge"), children: [
+      /* @__PURE__ */ jsxs("button", { style: tabStyle2(tab === "knowledge"), onClick: () => setTab("knowledge"), children: [
         "Knowledge ",
         memories?.length ? `(${memories.length})` : ""
       ] }),
-      /* @__PURE__ */ jsx("button", { style: tabStyle(tab === "search"), onClick: () => setTab("search"), children: "Search" }),
-      /* @__PURE__ */ jsx("button", { style: tabStyle(tab === "add"), onClick: () => setTab("add"), children: "Add" })
+      /* @__PURE__ */ jsx("button", { style: tabStyle2(tab === "search"), onClick: () => setTab("search"), children: "Search" }),
+      /* @__PURE__ */ jsx("button", { style: tabStyle2(tab === "add"), onClick: () => setTab("add"), children: "Add" })
     ] }),
     tab === "knowledge" && /* @__PURE__ */ jsxs("div", { children: [
       isLoading && /* @__PURE__ */ jsx("div", { style: muted, children: "Loading..." }),
@@ -736,8 +736,304 @@ function KBDashboardWidget({ context }) {
     ] })
   ] });
 }
+var KB_ROUTE = "knowledge-base";
+function KBSidebarLink({ context }) {
+  const href = context.companyPrefix ? `/${context.companyPrefix}/${KB_ROUTE}` : `/${KB_ROUTE}`;
+  const isActive = typeof window !== "undefined" && window.location.pathname === href;
+  return /* @__PURE__ */ jsxs(
+    "a",
+    {
+      href,
+      "aria-current": isActive ? "page" : void 0,
+      className: [
+        "flex items-center gap-2.5 px-3 py-2 text-[13px] font-medium transition-colors",
+        isActive ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"
+      ].join(" "),
+      children: [
+        /* @__PURE__ */ jsx("span", { className: "flex h-5 w-5 items-center justify-center", children: /* @__PURE__ */ jsx("svg", { width: "16", height: "16", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", children: /* @__PURE__ */ jsx("path", { d: "M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" }) }) }),
+        /* @__PURE__ */ jsx("span", { className: "flex-1 truncate", children: "Knowledge Base" })
+      ]
+    }
+  );
+}
+var pageBg = { padding: "1.5rem 2rem", maxWidth: 960, margin: "0 auto" };
+var tabBar = { display: "flex", gap: 2, borderBottom: "1px solid rgba(255,255,255,0.08)", marginBottom: 16 };
+var tabStyle = (active) => ({
+  padding: "8px 16px",
+  fontSize: "0.85rem",
+  fontWeight: 500,
+  cursor: "pointer",
+  borderBottom: active ? "2px solid rgb(99,102,241)" : "2px solid transparent",
+  color: active ? "#fff" : "rgba(255,255,255,0.5)",
+  background: "none",
+  border: "none",
+  borderBottomStyle: "solid"
+});
+var cardStyle = { background: "rgba(255,255,255,0.03)", borderRadius: 8, border: "1px solid rgba(255,255,255,0.06)", marginBottom: 12 };
+var rowStyle = { padding: "10px 14px", borderBottom: "1px solid rgba(255,255,255,0.04)", fontSize: "0.85rem" };
+var badgeStyle = (color) => ({ display: "inline-block", padding: "1px 6px", borderRadius: 3, fontSize: "0.7rem", fontWeight: 500, background: `${color}22`, color, marginRight: 4 });
+var inputCss = { padding: "8px 12px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.06)", color: "#fff", fontSize: "0.85rem", outline: "none", width: "100%" };
+var btnPrimary = { padding: "8px 18px", borderRadius: 6, border: "none", background: "rgba(99,102,241,0.3)", color: "rgb(165,168,255)", fontSize: "0.85rem", fontWeight: 500, cursor: "pointer" };
+var mutedSm = { fontSize: "0.75rem", color: "rgba(255,255,255,0.4)" };
+var SOURCE_COLORS = {
+  issue_completion: "rgb(34,197,94)",
+  document: "rgb(59,130,246)",
+  executive_brief: "rgb(168,85,247)",
+  unknown: "rgb(161,161,170)"
+};
+function KBPage({ context }) {
+  const [tab, setTab] = useState("search");
+  return /* @__PURE__ */ jsxs("div", { style: pageBg, children: [
+    /* @__PURE__ */ jsx("h2", { style: { fontSize: "1.2rem", fontWeight: 700, color: "#fff", marginBottom: 12 }, children: "Knowledge Base" }),
+    /* @__PURE__ */ jsx("div", { style: tabBar, children: ["search", "documents", "folders", "briefs", "stats"].map((t) => /* @__PURE__ */ jsx("button", { style: tabStyle(tab === t), onClick: () => setTab(t), children: t.charAt(0).toUpperCase() + t.slice(1) }, t)) }),
+    tab === "search" && /* @__PURE__ */ jsx(KBSearchTab, { companyId: context.companyId }),
+    tab === "documents" && /* @__PURE__ */ jsx(KBDocumentsTab, { companyId: context.companyId }),
+    tab === "folders" && /* @__PURE__ */ jsx(KBFoldersTab, { companyId: context.companyId }),
+    tab === "briefs" && /* @__PURE__ */ jsx(KBBriefsTab, { companyId: context.companyId }),
+    tab === "stats" && /* @__PURE__ */ jsx(KBStatsTab, { companyId: context.companyId })
+  ] });
+}
+function KBSearchTab({ companyId }) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState(null);
+  const [searching, setSearching] = useState(false);
+  const [expanded, setExpanded] = useState(null);
+  const searchAction = usePluginAction("kb:search");
+  const doSearch = useCallback(async () => {
+    if (!query.trim()) return;
+    setSearching(true);
+    try {
+      const res = await searchAction({ companyId, query: query.trim() });
+      setResults(Array.isArray(res) ? res : []);
+    } catch {
+      setResults([]);
+    } finally {
+      setSearching(false);
+    }
+  }, [query, companyId, searchAction]);
+  return /* @__PURE__ */ jsxs("div", { children: [
+    /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8, marginBottom: 16 }, children: [
+      /* @__PURE__ */ jsx(
+        "input",
+        {
+          style: { ...inputCss, flex: 1, fontSize: "1rem", padding: "10px 14px" },
+          value: query,
+          onChange: (e) => setQuery(e.target.value),
+          onKeyDown: (e) => e.key === "Enter" && doSearch(),
+          placeholder: "Search completed work, documents, briefs..."
+        }
+      ),
+      /* @__PURE__ */ jsx("button", { style: btnPrimary, onClick: doSearch, disabled: searching, children: searching ? "Searching..." : "Search" })
+    ] }),
+    results !== null && results.length === 0 && /* @__PURE__ */ jsx("div", { style: { ...mutedSm, padding: 20, textAlign: "center" }, children: "No results found." }),
+    results && results.map((r, i) => {
+      const titleMatch = r.content.match(/\[title: ([^\]]+)\]/);
+      const sourceMatch = r.content.match(/\[kb_source: ([^\]]+)\]/);
+      const agentMatch = r.content.match(/\[agent: ([^\]]+)\]/);
+      const issueMatch = r.content.match(/\[issue: ([^\]]+)\]/);
+      const cleanContent = r.content.replace(/\[[\w_]+: [^\]]+\]/g, "").trim();
+      const source = sourceMatch?.[1] ?? "unknown";
+      const isExpanded = expanded === (r.id || String(i));
+      return /* @__PURE__ */ jsxs("div", { style: cardStyle, children: [
+        /* @__PURE__ */ jsxs(
+          "div",
+          {
+            style: { ...rowStyle, cursor: "pointer", borderBottom: isExpanded ? "1px solid rgba(255,255,255,0.06)" : "none" },
+            onClick: () => setExpanded(isExpanded ? null : r.id || String(i)),
+            children: [
+              /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }, children: [
+                /* @__PURE__ */ jsx("span", { style: badgeStyle(SOURCE_COLORS[source] ?? SOURCE_COLORS.unknown), children: source.replace("_", " ") }),
+                /* @__PURE__ */ jsx("span", { style: { fontWeight: 600, color: "#fff" }, children: titleMatch?.[1] ?? "Untitled" }),
+                issueMatch && /* @__PURE__ */ jsx("span", { style: mutedSm, children: issueMatch[1] }),
+                agentMatch && /* @__PURE__ */ jsxs("span", { style: mutedSm, children: [
+                  "by ",
+                  agentMatch[1]
+                ] }),
+                /* @__PURE__ */ jsx("span", { style: { ...mutedSm, marginLeft: "auto" }, children: isExpanded ? "\u25BE" : "\u25B8" })
+              ] }),
+              !isExpanded && /* @__PURE__ */ jsxs("div", { style: { ...mutedSm, lineHeight: 1.4 }, children: [
+                cleanContent.substring(0, 150),
+                "..."
+              ] })
+            ]
+          }
+        ),
+        isExpanded && /* @__PURE__ */ jsx("div", { style: { padding: "12px 14px", fontSize: "0.85rem", color: "rgba(255,255,255,0.8)", lineHeight: 1.6, whiteSpace: "pre-wrap", maxHeight: 400, overflowY: "auto" }, children: cleanContent })
+      ] }, r.id || i);
+    })
+  ] });
+}
+function KBDocumentsTab({ companyId }) {
+  const { data: docs } = usePluginData("kb:list-documents", { companyId });
+  const [uploadName, setUploadName] = useState("");
+  const [uploadContent, setUploadContent] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const uploadAction = usePluginAction("kb:upload-document");
+  const handleUpload = useCallback(async () => {
+    if (!uploadName.trim() || !uploadContent.trim()) return;
+    setUploading(true);
+    try {
+      await uploadAction({ companyId, name: uploadName.trim(), content: uploadContent.trim() });
+      setUploadName("");
+      setUploadContent("");
+    } catch {
+    }
+    setUploading(false);
+  }, [uploadName, uploadContent, companyId, uploadAction]);
+  return /* @__PURE__ */ jsxs("div", { children: [
+    /* @__PURE__ */ jsxs("div", { style: { ...cardStyle, padding: 14 }, children: [
+      /* @__PURE__ */ jsx("div", { style: { fontSize: "0.8rem", fontWeight: 600, color: "rgba(255,255,255,0.6)", marginBottom: 8 }, children: "Upload Document" }),
+      /* @__PURE__ */ jsx("input", { style: { ...inputCss, marginBottom: 8 }, value: uploadName, onChange: (e) => setUploadName(e.target.value), placeholder: "Document name" }),
+      /* @__PURE__ */ jsx("textarea", { style: { ...inputCss, minHeight: 80, resize: "vertical", fontFamily: "monospace", fontSize: "0.8rem" }, value: uploadContent, onChange: (e) => setUploadContent(e.target.value), placeholder: "Paste document content here..." }),
+      /* @__PURE__ */ jsx("div", { style: { marginTop: 8 }, children: /* @__PURE__ */ jsx("button", { style: btnPrimary, onClick: handleUpload, disabled: uploading || !uploadName.trim() || !uploadContent.trim(), children: uploading ? "Uploading..." : "Upload" }) })
+    ] }),
+    /* @__PURE__ */ jsxs("div", { style: { fontSize: "0.8rem", fontWeight: 600, color: "rgba(255,255,255,0.6)", marginTop: 16, marginBottom: 8 }, children: [
+      (docs ?? []).length,
+      " documents indexed"
+    ] }),
+    (docs ?? []).map((d) => /* @__PURE__ */ jsxs("div", { style: { ...rowStyle, display: "flex", alignItems: "center", gap: 8 }, children: [
+      /* @__PURE__ */ jsx("span", { style: badgeStyle(SOURCE_COLORS[d.source] ?? SOURCE_COLORS.unknown), children: d.source.replace("_", " ") }),
+      /* @__PURE__ */ jsx("span", { style: { fontWeight: 500, color: "#fff", flex: 1 }, children: d.title }),
+      d.issue && /* @__PURE__ */ jsx("span", { style: mutedSm, children: d.issue }),
+      d.agent && /* @__PURE__ */ jsx("span", { style: mutedSm, children: d.agent })
+    ] }, d.id))
+  ] });
+}
+function KBFoldersTab({ companyId }) {
+  const { data: info } = usePluginData("kb:indexed-folders", { companyId });
+  const [newFolder, setNewFolder] = useState("");
+  const [indexing, setIndexing] = useState(null);
+  const indexAction = usePluginAction("kb:index-folder");
+  const handleIndex = useCallback(async (path) => {
+    setIndexing(path);
+    try {
+      const res = await indexAction({ companyId, path, recursive: true });
+      alert(res.ok ? `Indexed ${res.indexed} new files (${res.unchanged} unchanged, ${res.skipped} skipped)` : `Error: ${res.error}`);
+    } catch (err) {
+      alert(`Failed: ${err}`);
+    }
+    setIndexing(null);
+  }, [companyId, indexAction]);
+  const folders = info?.watchFolders ?? [];
+  return /* @__PURE__ */ jsxs("div", { children: [
+    /* @__PURE__ */ jsxs("div", { style: { ...cardStyle, padding: 14 }, children: [
+      /* @__PURE__ */ jsx("div", { style: { fontSize: "0.8rem", fontWeight: 600, color: "rgba(255,255,255,0.6)", marginBottom: 8 }, children: "Index a Folder" }),
+      /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8 }, children: [
+        /* @__PURE__ */ jsx("input", { style: { ...inputCss, flex: 1 }, value: newFolder, onChange: (e) => setNewFolder(e.target.value), placeholder: "/data/accounts/Animus-Systems-SL" }),
+        /* @__PURE__ */ jsx("button", { style: btnPrimary, onClick: () => {
+          if (newFolder.trim()) handleIndex(newFolder.trim());
+        }, disabled: !!indexing || !newFolder.trim(), children: indexing === newFolder ? "Indexing..." : "Index Now" })
+      ] })
+    ] }),
+    /* @__PURE__ */ jsxs("div", { style: { fontSize: "0.8rem", fontWeight: 600, color: "rgba(255,255,255,0.6)", marginTop: 16, marginBottom: 8 }, children: [
+      "Watch Folders (",
+      folders.length,
+      ") \xB7 ",
+      info?.hashCount ?? 0,
+      " files tracked"
+    ] }),
+    folders.length === 0 ? /* @__PURE__ */ jsx("div", { style: { ...mutedSm, padding: 12 }, children: "No watch folders configured. Add them in Agent Memory Settings." }) : folders.map((f) => /* @__PURE__ */ jsxs("div", { style: { ...rowStyle, display: "flex", alignItems: "center", gap: 8 }, children: [
+      /* @__PURE__ */ jsx("span", { style: { fontFamily: "monospace", fontSize: "0.8rem", color: "#fff", flex: 1 }, children: f }),
+      /* @__PURE__ */ jsx(
+        "button",
+        {
+          style: { ...btnPrimary, padding: "4px 12px", fontSize: "0.75rem" },
+          onClick: () => handleIndex(f),
+          disabled: !!indexing,
+          children: indexing === f ? "..." : "Re-index"
+        }
+      )
+    ] }, f))
+  ] });
+}
+function KBBriefsTab({ companyId }) {
+  const { data: briefs } = usePluginData("kb:list-briefs", { companyId });
+  const [expanded, setExpanded] = useState(null);
+  const [issueId, setIssueId] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const briefAction = usePluginAction("kb:generate-brief");
+  const handleGenerate = useCallback(async () => {
+    if (!issueId.trim()) return;
+    setGenerating(true);
+    try {
+      const res = await briefAction({ companyId, issueId: issueId.trim() });
+      if (res.ok) {
+        alert("Brief generated successfully!");
+        setIssueId("");
+      } else {
+        alert(`Error: ${res.error}`);
+      }
+    } catch (err) {
+      alert(`Failed: ${err}`);
+    }
+    setGenerating(false);
+  }, [issueId, companyId, briefAction]);
+  return /* @__PURE__ */ jsxs("div", { children: [
+    /* @__PURE__ */ jsxs("div", { style: { ...cardStyle, padding: 14 }, children: [
+      /* @__PURE__ */ jsx("div", { style: { fontSize: "0.8rem", fontWeight: 600, color: "rgba(255,255,255,0.6)", marginBottom: 8 }, children: "Generate Executive Brief" }),
+      /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8 }, children: [
+        /* @__PURE__ */ jsx("input", { style: { ...inputCss, flex: 1 }, value: issueId, onChange: (e) => setIssueId(e.target.value), placeholder: "Issue ID (e.g. ANI-877)" }),
+        /* @__PURE__ */ jsx("button", { style: btnPrimary, onClick: handleGenerate, disabled: generating || !issueId.trim(), children: generating ? "Generating..." : "Generate" })
+      ] })
+    ] }),
+    /* @__PURE__ */ jsxs("div", { style: { fontSize: "0.8rem", fontWeight: 600, color: "rgba(255,255,255,0.6)", marginTop: 16, marginBottom: 8 }, children: [
+      (briefs ?? []).length,
+      " executive briefs"
+    ] }),
+    (briefs ?? []).map((b) => {
+      const isExpanded = expanded === b.id;
+      return /* @__PURE__ */ jsxs("div", { style: cardStyle, children: [
+        /* @__PURE__ */ jsx("div", { style: { ...rowStyle, cursor: "pointer" }, onClick: () => setExpanded(isExpanded ? null : b.id), children: /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8 }, children: [
+          /* @__PURE__ */ jsx("span", { style: badgeStyle("rgb(168,85,247)"), children: "brief" }),
+          /* @__PURE__ */ jsx("span", { style: { fontWeight: 500, color: "#fff" }, children: b.title }),
+          b.issue && /* @__PURE__ */ jsx("span", { style: mutedSm, children: b.issue }),
+          /* @__PURE__ */ jsx("span", { style: { ...mutedSm, marginLeft: "auto" }, children: isExpanded ? "\u25BE" : "\u25B8" })
+        ] }) }),
+        isExpanded && /* @__PURE__ */ jsx("div", { style: { padding: "12px 14px", fontSize: "0.85rem", color: "rgba(255,255,255,0.8)", lineHeight: 1.6, whiteSpace: "pre-wrap", maxHeight: 500, overflowY: "auto" }, children: b.content })
+      ] }, b.id);
+    })
+  ] });
+}
+function KBStatsTab({ companyId }) {
+  const { data: stats } = usePluginData("kb:stats", { companyId });
+  const { data: folders } = usePluginData("kb:indexed-folders", { companyId });
+  const { data: status } = usePluginData("memory:status", { companyId });
+  const s = stats ?? { indexedIssues: 0, uploadedDocuments: 0, generatedBriefs: 0 };
+  const connected = status?.memosConnected ?? false;
+  return /* @__PURE__ */ jsxs("div", { children: [
+    /* @__PURE__ */ jsx("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 12, marginBottom: 16 }, children: [
+      { label: "Indexed Issues", value: s.indexedIssues },
+      { label: "Documents", value: s.uploadedDocuments },
+      { label: "Briefs", value: s.generatedBriefs },
+      { label: "Tracked Files", value: folders?.hashCount ?? 0 }
+    ].map((item) => /* @__PURE__ */ jsxs("div", { style: { textAlign: "center", padding: 14, ...cardStyle }, children: [
+      /* @__PURE__ */ jsx("div", { style: { fontSize: "1.5rem", fontWeight: 700, color: "#fff" }, children: item.value }),
+      /* @__PURE__ */ jsx("div", { style: { fontSize: "0.75rem", color: "rgba(255,255,255,0.5)" }, children: item.label })
+    ] }, item.label)) }),
+    /* @__PURE__ */ jsxs("div", { style: cardStyle, children: [
+      /* @__PURE__ */ jsxs("div", { style: rowStyle, children: [
+        /* @__PURE__ */ jsx("span", { style: { color: "rgba(255,255,255,0.5)" }, children: "MemOS" }),
+        /* @__PURE__ */ jsx("span", { style: { float: "right", color: connected ? "rgb(34,197,94)" : "rgb(239,68,68)" }, children: connected ? "Connected" : "Disconnected" })
+      ] }),
+      /* @__PURE__ */ jsxs("div", { style: rowStyle, children: [
+        /* @__PURE__ */ jsx("span", { style: { color: "rgba(255,255,255,0.5)" }, children: "Watch Folders" }),
+        /* @__PURE__ */ jsx("span", { style: { float: "right", color: "#fff" }, children: folders?.watchFolders?.length ?? 0 })
+      ] }),
+      s.lastIndexAt && /* @__PURE__ */ jsxs("div", { style: rowStyle, children: [
+        /* @__PURE__ */ jsx("span", { style: { color: "rgba(255,255,255,0.5)" }, children: "Last Indexed" }),
+        /* @__PURE__ */ jsx("span", { style: { float: "right", color: "#fff" }, children: new Date(s.lastIndexAt).toLocaleString() })
+      ] }),
+      s.lastBriefAt && /* @__PURE__ */ jsxs("div", { style: { ...rowStyle, borderBottom: "none" }, children: [
+        /* @__PURE__ */ jsx("span", { style: { color: "rgba(255,255,255,0.5)" }, children: "Last Brief" }),
+        /* @__PURE__ */ jsx("span", { style: { float: "right", color: "#fff" }, children: new Date(s.lastBriefAt).toLocaleString() })
+      ] })
+    ] })
+  ] });
+}
 export {
   KBDashboardWidget,
+  KBPage,
+  KBSidebarLink,
   MemoryAgentTab,
   MemoryDashboardWidget,
   MemorySettingsPage

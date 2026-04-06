@@ -1360,11 +1360,19 @@ ${issue.description.substring(0, 1e3)}` : "",
       if (subtaskOutputs.length === 0) {
         let comments = [];
         try {
-          comments = await ctx.issues.listComments(issueId, companyId);
-        } catch {
+          const raw = await ctx.issues.listComments(issueId, companyId);
+          comments = Array.isArray(raw) ? raw : [];
+          ctx.logger.info("KB brief: listComments OK", { issueId, count: comments.length });
+          if (comments.length > 0) {
+            ctx.logger.info("KB brief: comment sample", { keys: Object.keys(comments[0]) });
+          }
+        } catch (err) {
+          const errMsg = err instanceof Error ? `${err.message}
+${err.stack}` : JSON.stringify(err);
+          ctx.logger.error("KB brief: listComments FAILED", { issueId, error: errMsg.substring(0, 500) });
         }
-        const agentComments = comments.filter((c) => c.authorAgentId && c.body.length > 50);
-        if (agentComments.length === 0) return { ok: false, error: "No agent output to summarize" };
+        const agentComments = comments.filter((c) => (c.authorAgentId || c.author_agent_id) && String(c.body ?? "").length > 50);
+        if (agentComments.length === 0) return { ok: false, error: `No agent output to summarize (${comments.length} comments found, none from agents)` };
         subtaskOutputs.push({
           identifier: issue.identifier || issueId.substring(0, 8),
           title: issue.title || "Untitled",

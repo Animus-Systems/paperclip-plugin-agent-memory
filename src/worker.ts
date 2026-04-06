@@ -863,10 +863,18 @@ const plugin = definePlugin({
         // No subtasks — generate brief from issue comments directly
         let comments: Array<Record<string, unknown>> = [];
         try {
-          comments = (await (ctx.issues as any).listComments(issueId, companyId)) as Array<Record<string, unknown>>;
-        } catch { /* */ }
-        const agentComments = comments.filter((c) => c.authorAgentId && (c.body as string).length > 50);
-        if (agentComments.length === 0) return { ok: false, error: "No agent output to summarize" };
+          const raw = await (ctx.issues as any).listComments(issueId, companyId);
+          comments = Array.isArray(raw) ? raw : [];
+          ctx.logger.info("KB brief: listComments OK", { issueId, count: comments.length });
+          if (comments.length > 0) {
+            ctx.logger.info("KB brief: comment sample", { keys: Object.keys(comments[0]) });
+          }
+        } catch (err) {
+          const errMsg = err instanceof Error ? `${err.message}\n${err.stack}` : JSON.stringify(err);
+          ctx.logger.error("KB brief: listComments FAILED", { issueId, error: errMsg.substring(0, 500) });
+        }
+        const agentComments = comments.filter((c) => (c.authorAgentId || c.author_agent_id) && String(c.body ?? "").length > 50);
+        if (agentComments.length === 0) return { ok: false, error: `No agent output to summarize (${comments.length} comments found, none from agents)` };
         subtaskOutputs.push({
           identifier: (issue.identifier || issueId.substring(0, 8)) as string,
           title: (issue.title || "Untitled") as string,

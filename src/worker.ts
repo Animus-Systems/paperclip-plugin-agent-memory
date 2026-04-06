@@ -20,7 +20,7 @@ const DEFAULT_CONFIG: MemoryPluginConfig = {
   llmFallbackModel: "google/gemini-2.5-flash",
   kbAutoIndex: true,
   kbAutoBreif: true,
-  kbBriefModel: "deepseek/deepseek-v3.2",
+  kbBriefModel: "google/gemini-2.5-flash",
   kbWatchFolders: [],
 };
 

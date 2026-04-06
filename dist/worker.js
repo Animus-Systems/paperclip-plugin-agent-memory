@@ -494,7 +494,7 @@ Format the output as clean markdown starting with: # Executive Brief: ${parentId
         max_tokens: 2e3,
         temperature: 0.3
       }),
-      signal: AbortSignal.timeout(6e4)
+      signal: AbortSignal.timeout(12e4)
     });
     if (!res.ok) {
       const text = await res.text().catch(() => "");
@@ -691,7 +691,7 @@ var DEFAULT_CONFIG = {
   llmFallbackModel: "google/gemini-2.5-flash",
   kbAutoIndex: true,
   kbAutoBreif: true,
-  kbBriefModel: "deepseek/deepseek-v3.2",
+  kbBriefModel: "google/gemini-2.5-flash",
   kbWatchFolders: []
 };
 function kbStatsKey(companyId) {

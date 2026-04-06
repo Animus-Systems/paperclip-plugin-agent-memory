@@ -47,7 +47,7 @@ Format the output as clean markdown starting with: # Executive Brief: ${parentId
         max_tokens: 2000,
         temperature: 0.3,
       }),
-      signal: AbortSignal.timeout(60_000),
+      signal: AbortSignal.timeout(120_000),
     });
 
     if (!res.ok) {

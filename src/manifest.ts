@@ -181,7 +181,7 @@ const manifest: PaperclipPluginManifestV1 = {
         type: "string",
         title: "Brief Generation Model",
         description: "OpenRouter model for compiling executive briefs",
-        default: "deepseek/deepseek-v3.2",
+        default: "google/gemini-2.5-flash",
       },
       kbWatchFolders: {
         type: "array",

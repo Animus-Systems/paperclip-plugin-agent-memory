@@ -1058,7 +1058,10 @@ function KBFoldersTab({ companyId }: { companyId: string }) {
     try {
       const res = await indexAction({ companyId, path, recursive: true }) as Record<string, unknown>;
       alert(res.ok ? `Indexed ${res.indexed} new files (${res.unchanged} unchanged, ${res.skipped} skipped)` : `Error: ${res.error}`);
-    } catch (err) { alert(`Failed: ${err}`); }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : typeof err === "object" ? JSON.stringify(err) : String(err);
+      alert(`Failed: ${msg.includes("502") || msg.includes("timeout") ? "Timed out — the brief may still be generating. Check back shortly." : msg}`);
+    }
     setIndexing(null);
   }, [companyId, indexAction]);
 
@@ -1121,7 +1124,10 @@ function KBBriefsTab({ companyId }: { companyId: string }) {
       } else {
         alert(`Error: ${res.error}`);
       }
-    } catch (err) { alert(`Failed: ${err}`); }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : typeof err === "object" ? JSON.stringify(err) : String(err);
+      alert(`Failed: ${msg.includes("502") || msg.includes("timeout") ? "Timed out — the brief may still be generating. Check back shortly." : msg}`);
+    }
     setGenerating(false);
   }, [issueId, companyId, briefAction]);
 

@@ -518,7 +518,7 @@ var DEFAULT_CONFIG = {
   maxMemoriesPerInjection: 5,
   injectionTokenBudget: 800,
   extractionMode: "hybrid",
-  llmExtractionModel: "openai/gpt-4o-mini",
+  llmExtractionModel: "mistralai/mistral-small-3.2-24b-instruct",
   llmFallbackModel: "google/gemini-2.5-flash",
   kbAutoIndex: true,
   kbAutoBreif: true,

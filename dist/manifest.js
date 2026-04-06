@@ -123,7 +123,7 @@ var manifest = {
         type: "string",
         title: "LLM Extraction Model",
         description: "OpenRouter model for LLM extraction (only used in llm/hybrid mode)",
-        default: "openai/gpt-4o-mini"
+        default: "mistralai/mistral-small-3.2-24b-instruct"
       },
       llmFallbackModel: {
         type: "string",

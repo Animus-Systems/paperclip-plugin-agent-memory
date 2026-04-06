@@ -372,7 +372,7 @@ function MemorySettingsPage({ context }) {
     memosConnected: false,
     memosUrl: "unknown",
     totalMemories: 0,
-    config: { autoExtract: true, autoInject: true, maxMemoriesPerInjection: 5, injectionTokenBudget: 800, extractionMode: "hybrid", llmExtractionModel: "openai/gpt-4o-mini", llmFallbackModel: "google/gemini-2.5-flash" }
+    config: { autoExtract: true, autoInject: true, maxMemoriesPerInjection: 5, injectionTokenBudget: 800, extractionMode: "hybrid", llmExtractionModel: "mistralai/mistral-small-3.2-24b-instruct", llmFallbackModel: "google/gemini-2.5-flash" }
   };
   const [dbConfig, setDbConfig] = useState(null);
   React.useEffect(() => {
@@ -531,7 +531,7 @@ function MemorySettingsPage({ context }) {
       ] }),
       /* @__PURE__ */ jsxs("div", { style: configRow, children: [
         /* @__PURE__ */ jsx("span", { style: muted, children: "LLM extraction model" }),
-        /* @__PURE__ */ jsx("input", { style: inputStyle, value: cfg.llmExtractionModel, onChange: (e) => handleChange("llmExtractionModel", e.target.value), placeholder: "openai/gpt-4o-mini" })
+        /* @__PURE__ */ jsx("input", { style: inputStyle, value: cfg.llmExtractionModel, onChange: (e) => handleChange("llmExtractionModel", e.target.value), placeholder: "mistralai/mistral-small-3.2-24b-instruct" })
       ] }),
       /* @__PURE__ */ jsxs("div", { style: configRow, children: [
         /* @__PURE__ */ jsx("span", { style: muted, children: "Fallback model" }),

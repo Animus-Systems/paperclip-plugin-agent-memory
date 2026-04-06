@@ -474,7 +474,7 @@ export function MemorySettingsPage({ context }: PluginSettingsPageProps) {
 
   const status = data ?? {
     memosConnected: false, memosUrl: "unknown", totalMemories: 0,
-    config: { autoExtract: true, autoInject: true, maxMemoriesPerInjection: 5, injectionTokenBudget: 800, extractionMode: "hybrid", llmExtractionModel: "openai/gpt-4o-mini", llmFallbackModel: "google/gemini-2.5-flash" },
+    config: { autoExtract: true, autoInject: true, maxMemoriesPerInjection: 5, injectionTokenBudget: 800, extractionMode: "hybrid", llmExtractionModel: "mistralai/mistral-small-3.2-24b-instruct", llmFallbackModel: "google/gemini-2.5-flash" },
   };
 
   // Read config directly from the Paperclip config API (not the data handler which caches)
@@ -624,7 +624,7 @@ export function MemorySettingsPage({ context }: PluginSettingsPageProps) {
         </div>
         <div style={configRow}>
           <span style={muted}>LLM extraction model</span>
-          <input style={inputStyle} value={cfg.llmExtractionModel as string} onChange={(e) => handleChange("llmExtractionModel", e.target.value)} placeholder="openai/gpt-4o-mini" />
+          <input style={inputStyle} value={cfg.llmExtractionModel as string} onChange={(e) => handleChange("llmExtractionModel", e.target.value)} placeholder="mistralai/mistral-small-3.2-24b-instruct" />
         </div>
         <div style={configRow}>
           <span style={muted}>Fallback model</span>

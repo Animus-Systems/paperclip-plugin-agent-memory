@@ -1,7 +1,7 @@
 /**
  * LLM-based memory extraction from agent run summaries.
  *
- * Calls OpenRouter (gpt-4o-mini) to extract structured memories
+ * Calls OpenRouter (mistral-small-3.2) to extract structured memories
  * when rule-based extraction yields insufficient results.
  *
  * Cost: ~$0.0003 per extraction (2K token summary at $0.15/1M input).

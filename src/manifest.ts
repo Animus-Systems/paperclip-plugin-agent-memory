@@ -214,12 +214,6 @@ const manifest: PaperclipPluginManifestV1 = {
         order: 25,
       },
       {
-        type: "dashboardWidget",
-        id: "kb-overview",
-        displayName: "Knowledge Base",
-        exportName: "KBDashboardWidget",
-      },
-      {
         type: "page",
         id: "kb-page",
         displayName: "Knowledge Base",

@@ -668,7 +668,7 @@ export function MemorySettingsPage({ context }: PluginSettingsPageProps) {
             style={{ ...inputStyle, textAlign: "left", minHeight: 60, fontFamily: "monospace", fontSize: "0.75rem", resize: "vertical" }}
             value={((cfg.kbWatchFolders as string[]) ?? []).join("\n")}
             onChange={(e) => handleChange("kbWatchFolders", e.target.value.split("\n").map((s: string) => s.trim()).filter(Boolean))}
-            placeholder="/data/accounts/Animus-Systems-SL&#10;/data/github/animusystems"
+            placeholder="/data/shared/accounts/Animus-Systems-SL&#10;/data/github/animusystems"
           />
         </div>
       </div>
@@ -679,7 +679,7 @@ export function MemorySettingsPage({ context }: PluginSettingsPageProps) {
         <div style={{ ...configRow, borderBottom: "none", gap: 8 }}>
           <input
             style={{ ...inputStyle, flex: 1, textAlign: "left" }}
-            placeholder="/data/accounts/Animus-Systems-SL"
+            placeholder="/data/shared/accounts/Animus-Systems-SL"
             id="kb-folder-path"
           />
           <button
@@ -1609,7 +1609,7 @@ function KBFoldersTab({ companyId }: { companyId: string }) {
         <div style={{ display: "flex", gap: 10 }}>
           <KBInput
             value={newFolder} onChange={setNewFolder}
-            placeholder="/data/accounts/Animus-Systems-SL"
+            placeholder="/data/shared/accounts/Animus-Systems-SL"
             mono style={{ flex: 1 }}
           />
           <KBButton

@@ -572,7 +572,7 @@ function MemorySettingsPage({ context }) {
             style: { ...inputStyle, textAlign: "left", minHeight: 60, fontFamily: "monospace", fontSize: "0.75rem", resize: "vertical" },
             value: (cfg.kbWatchFolders ?? []).join("\n"),
             onChange: (e) => handleChange("kbWatchFolders", e.target.value.split("\n").map((s) => s.trim()).filter(Boolean)),
-            placeholder: "/data/accounts/Animus-Systems-SL\n/data/github/animusystems"
+            placeholder: "/data/shared/accounts/Animus-Systems-SL\n/data/github/animusystems"
           }
         )
       ] })
@@ -583,7 +583,7 @@ function MemorySettingsPage({ context }) {
         "input",
         {
           style: { ...inputStyle, flex: 1, textAlign: "left" },
-          placeholder: "/data/accounts/Animus-Systems-SL",
+          placeholder: "/data/shared/accounts/Animus-Systems-SL",
           id: "kb-folder-path"
         }
       ),
@@ -1400,7 +1400,7 @@ function KBFoldersTab({ companyId }) {
           {
             value: newFolder,
             onChange: setNewFolder,
-            placeholder: "/data/accounts/Animus-Systems-SL",
+            placeholder: "/data/shared/accounts/Animus-Systems-SL",
             mono: true,
             style: { flex: 1 }
           }

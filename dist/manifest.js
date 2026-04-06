@@ -171,7 +171,7 @@ var manifest = {
       kbWatchFolders: {
         type: "array",
         title: "Watch Folders",
-        description: "Folder paths to periodically scan and index (e.g. /data/accounts/Animus-Systems-SL)",
+        description: "Folder paths to periodically scan and index (e.g. /data/shared/accounts/Animus-Systems-SL)",
         items: { type: "string" },
         default: []
       }

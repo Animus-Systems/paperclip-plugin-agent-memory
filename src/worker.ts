@@ -252,7 +252,7 @@ const plugin = definePlugin({
         parametersSchema: {
           type: "object",
           properties: {
-            path: { type: "string", description: "Absolute folder path to index (e.g. /data/accounts/Animus-Systems-SL)" },
+            path: { type: "string", description: "Absolute folder path to index (e.g. /data/shared/accounts/Animus-Systems-SL)" },
             recursive: { type: "boolean", description: "Include subfolders (default: true)" },
           },
           required: ["path"],
@@ -740,8 +740,9 @@ const plugin = definePlugin({
       const companyId = params.companyId as string;
       const query = params.query as string;
       if (!query || !companyId) return [];
-      const results = await client.searchKnowledge(query, companyId, 10);
-      return results.map(parseKBMemory);
+      const results = await client.searchKnowledge(query, companyId, 15);
+      // Only return actual KB entries (have [type: knowledge_base] or [kb_source:] tags)
+      return results.map(parseKBMemory).filter((r) => r.source !== "unknown");
     });
 
     /** KB search as action (for UI usePluginAction calls). */
@@ -749,8 +750,8 @@ const plugin = definePlugin({
       const companyId = params.companyId as string;
       const query = params.query as string;
       if (!query || !companyId) return [];
-      const results = await client.searchKnowledge(query, companyId, 10);
-      return results.map(parseKBMemory);
+      const results = await client.searchKnowledge(query, companyId, 15);
+      return results.map(parseKBMemory).filter((r) => r.source !== "unknown");
     });
 
     /** List all KB entries (documents, indexed issues, briefs). */
@@ -758,7 +759,7 @@ const plugin = definePlugin({
       const companyId = params.companyId as string;
       if (!companyId) return [];
       const results = await client.searchKnowledge("*", companyId, 50);
-      return results.map(parseKBMemory);
+      return results.map(parseKBMemory).filter((r) => r.source !== "unknown");
     });
 
     /** List executive briefs only. */

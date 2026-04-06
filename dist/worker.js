@@ -1073,7 +1073,7 @@ ${formatted}`,
         parametersSchema: {
           type: "object",
           properties: {
-            path: { type: "string", description: "Absolute folder path to index (e.g. /data/accounts/Animus-Systems-SL)" },
+            path: { type: "string", description: "Absolute folder path to index (e.g. /data/shared/accounts/Animus-Systems-SL)" },
             recursive: { type: "boolean", description: "Include subfolders (default: true)" }
           },
           required: ["path"]
@@ -1477,21 +1477,21 @@ ${issue.description.substring(0, 1e3)}` : "",
       const companyId = params.companyId;
       const query = params.query;
       if (!query || !companyId) return [];
-      const results = await client.searchKnowledge(query, companyId, 10);
-      return results.map(parseKBMemory);
+      const results = await client.searchKnowledge(query, companyId, 15);
+      return results.map(parseKBMemory).filter((r) => r.source !== "unknown");
     });
     ctx.actions.register("kb:search", async (params) => {
       const companyId = params.companyId;
       const query = params.query;
       if (!query || !companyId) return [];
-      const results = await client.searchKnowledge(query, companyId, 10);
-      return results.map(parseKBMemory);
+      const results = await client.searchKnowledge(query, companyId, 15);
+      return results.map(parseKBMemory).filter((r) => r.source !== "unknown");
     });
     ctx.data.register("kb:list-documents", async (params) => {
       const companyId = params.companyId;
       if (!companyId) return [];
       const results = await client.searchKnowledge("*", companyId, 50);
-      return results.map(parseKBMemory);
+      return results.map(parseKBMemory).filter((r) => r.source !== "unknown");
     });
     ctx.data.register("kb:list-briefs", async (params) => {
       const companyId = params.companyId;

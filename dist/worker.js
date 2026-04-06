@@ -687,6 +687,58 @@ except Exception as e:
   return { text, format: "xlsx", charCount: text.length };
 }
 
+// src/worker/kb-utils.ts
+var TAG_REGEX = /\[(\w+(?:_\w+)*): ([^\]]+)\]/g;
+function extractTags(raw) {
+  const tags = {};
+  let m;
+  while ((m = TAG_REGEX.exec(raw)) !== null) {
+    tags[m[1]] = m[2];
+  }
+  TAG_REGEX.lastIndex = 0;
+  return tags;
+}
+function stripTags(raw) {
+  return raw.replace(/\[[\w_]+: [^\]]+\]\s*/g, "").trim();
+}
+function deriveTitleFromContent(content) {
+  const headingMatch = content.match(/^#+\s+(.+)/m);
+  if (headingMatch && headingMatch[1].trim().length > 5) {
+    return headingMatch[1].trim().substring(0, 100);
+  }
+  const lines = content.split("\n").filter((l) => l.trim().length > 0);
+  for (const line of lines.slice(0, 5)) {
+    const trimmed = line.replace(/^[#*>\-\s]+/, "").trim();
+    if (trimmed.length > 15 && trimmed.length < 120) {
+      return trimmed;
+    }
+  }
+  const flat = content.replace(/\s+/g, " ").trim();
+  return flat.substring(0, 80) + (flat.length > 80 ? "..." : "");
+}
+function parseKBMemory(mem) {
+  const tags = extractTags(mem.content);
+  const meta = mem.metadata ?? {};
+  const cleanContent = stripTags(mem.content);
+  const title = tags["title"] ?? meta.name ?? deriveTitleFromContent(cleanContent);
+  const source = tags["kb_source"] ?? tags["source"] ?? meta.type ?? "unknown";
+  const agent = tags["agent"] ?? meta.agent ?? null;
+  const issue = tags["issue"] ?? meta.issue ?? null;
+  const tagList = tags["tags"] ? tags["tags"].split(",").map((t) => t.trim()).filter(Boolean) : [];
+  const excerpt = cleanContent.substring(0, 200) + (cleanContent.length > 200 ? "..." : "");
+  return {
+    id: mem.id,
+    title,
+    source,
+    agent,
+    issue,
+    cleanContent,
+    excerpt,
+    score: mem.score,
+    tags: tagList
+  };
+}
+
 // src/worker.ts
 var DEFAULT_CONFIG = {
   enabled: true,
@@ -1266,48 +1318,27 @@ ${issue.description.substring(0, 1e3)}` : "",
       const companyId = params.companyId;
       const query = params.query;
       if (!query || !companyId) return [];
-      return client.searchKnowledge(query, companyId, 10);
+      const results = await client.searchKnowledge(query, companyId, 10);
+      return results.map(parseKBMemory);
     });
     ctx.actions.register("kb:search", async (params) => {
       const companyId = params.companyId;
       const query = params.query;
       if (!query || !companyId) return [];
-      return client.searchKnowledge(query, companyId, 10);
+      const results = await client.searchKnowledge(query, companyId, 10);
+      return results.map(parseKBMemory);
     });
     ctx.data.register("kb:list-documents", async (params) => {
       const companyId = params.companyId;
       if (!companyId) return [];
       const results = await client.searchKnowledge("*", companyId, 50);
-      return results.map((r) => {
-        const titleMatch = r.content.match(/\[title: ([^\]]+)\]/);
-        const sourceMatch = r.content.match(/\[kb_source: ([^\]]+)\]/);
-        const issueMatch = r.content.match(/\[issue: ([^\]]+)\]/);
-        const agentMatch = r.content.match(/\[agent: ([^\]]+)\]/);
-        return {
-          id: r.id,
-          title: titleMatch?.[1] ?? r.content.substring(0, 60),
-          source: sourceMatch?.[1] ?? "unknown",
-          issue: issueMatch?.[1] ?? null,
-          agent: agentMatch?.[1] ?? null,
-          excerpt: r.content.replace(/\[[\w_]+: [^\]]+\]/g, "").trim().substring(0, 200),
-          score: r.score
-        };
-      });
+      return results.map(parseKBMemory);
     });
     ctx.data.register("kb:list-briefs", async (params) => {
       const companyId = params.companyId;
       if (!companyId) return [];
       const results = await client.searchKnowledge("Executive Brief", companyId, 20);
-      return results.filter((r) => r.content.includes("[kb_source: executive_brief]")).map((r) => {
-        const titleMatch = r.content.match(/\[title: ([^\]]+)\]/);
-        const issueMatch = r.content.match(/\[issue: ([^\]]+)\]/);
-        return {
-          id: r.id,
-          title: titleMatch?.[1] ?? "Untitled Brief",
-          issue: issueMatch?.[1] ?? null,
-          content: r.content.replace(/\[[\w_]+: [^\]]+\]/g, "").trim()
-        };
-      });
+      return results.map(parseKBMemory).filter((r) => r.source === "executive_brief");
     });
     ctx.data.register("kb:indexed-folders", async (params) => {
       const companyId = params.companyId;

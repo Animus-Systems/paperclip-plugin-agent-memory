@@ -758,7 +758,7 @@ export function KBDashboardWidget({ context }: PluginDashboardWidgetProps) {
   });
 
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<Memory[] | null>(null);
+  const [results, setResults] = useState<ParsedKBEntry[] | null>(null);
   const [searching, setSearching] = useState(false);
   const searchAction = usePluginAction("kb:search");
 
@@ -828,7 +828,8 @@ export function KBDashboardWidget({ context }: PluginDashboardWidgetProps) {
           ) : (
             results.slice(0, 5).map((r, i) => (
               <div key={r.id || i} style={{ padding: "8px", borderBottom: "1px solid rgba(255,255,255,0.06)", lineHeight: 1.4 }}>
-                {r.content.substring(0, 200)}{r.content.length > 200 ? "..." : ""}
+                <div style={{ fontWeight: 500, marginBottom: 2 }}>{r.title}</div>
+                <div style={{ opacity: 0.6 }}>{r.excerpt}</div>
               </div>
             ))
           )}
@@ -876,8 +877,17 @@ export function KBSidebarLink({ context }: PluginSidebarProps) {
 // KB FULL PAGE — Apple-inspired design
 // ══════════════════════════════════════════════════════════════
 
-interface KBDocEntry { id: string; title: string; source: string; issue: string | null; agent: string | null; excerpt: string; score?: number; }
-interface KBBrief { id: string; title: string; issue: string | null; content: string; }
+interface ParsedKBEntry {
+  id: string;
+  title: string;
+  source: string;
+  agent: string | null;
+  issue: string | null;
+  cleanContent: string;
+  excerpt: string;
+  score?: number;
+  tags: string[];
+}
 interface KBFolderInfo { watchFolders: string[]; hashCount: number; }
 
 // ── Design tokens ──────────────────────────────────────────
@@ -1218,30 +1228,6 @@ const Icons = {
   ),
 };
 
-// ── Metadata parser for MemOS content ──────────────────────
-
-function parseKBContent(raw: string): {
-  title: string; source: string; agent: string | null;
-  issue: string | null; content: string; type: string | null;
-} {
-  const tags: Record<string, string> = {};
-  // Match [key: value] tags at start or within content
-  const tagRegex = /\[(\w+(?:_\w+)*): ([^\]]+)\]/g;
-  let m: RegExpExecArray | null;
-  while ((m = tagRegex.exec(raw)) !== null) {
-    tags[m[1]] = m[2];
-  }
-  const content = raw.replace(/\[[\w_]+: [^\]]+\]\s*/g, "").trim();
-  return {
-    title: tags["title"] ?? (content.substring(0, 60) + (content.length > 60 ? "..." : "")),
-    source: tags["kb_source"] ?? tags["source"] ?? tags["type"] ?? "unknown",
-    agent: tags["agent"] ?? null,
-    issue: tags["issue"] ?? null,
-    content,
-    type: tags["type"] ?? null,
-  };
-}
-
 // ── Page layout ────────────────────────────────────────────
 
 const TABS = [
@@ -1319,7 +1305,7 @@ export function KBPage({ context }: PluginPageProps) {
 
 function KBSearchTab({ companyId }: { companyId: string }) {
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<Memory[] | null>(null);
+  const [results, setResults] = useState<ParsedKBEntry[] | null>(null);
   const [searching, setSearching] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   const searchAction = usePluginAction("kb:search");
@@ -1384,8 +1370,7 @@ function KBSearchTab({ companyId }: { companyId: string }) {
             {results.length} result{results.length !== 1 ? "s" : ""}
           </span>
           {results.map((r, i) => {
-            const parsed = parseKBContent(r.content);
-            const source = SOURCE_THEME[parsed.source] ?? SOURCE_THEME.unknown;
+            const source = SOURCE_THEME[r.source] ?? SOURCE_THEME.unknown;
             const key = r.id || String(i);
             const isExpanded = expanded === key;
             const relevance = r.score != null ? Math.round(r.score * 100) : null;
@@ -1400,16 +1385,16 @@ function KBSearchTab({ companyId }: { companyId: string }) {
                       fontSize: "0.92rem", fontWeight: 600, color: KB.textPrimary,
                       flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                     }}>
-                      {parsed.title}
+                      {r.title}
                     </span>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-                      {parsed.issue && (
+                      {r.issue && (
                         <span style={{
                           fontSize: "0.75rem", color: KB.textTertiary, fontWeight: 500,
                           background: "rgba(255,255,255,0.05)", padding: "2px 8px",
                           borderRadius: 6, fontFamily: "ui-monospace, monospace",
                         }}>
-                          {parsed.issue}
+                          {r.issue}
                         </span>
                       )}
                       {relevance != null && (
@@ -1428,9 +1413,9 @@ function KBSearchTab({ companyId }: { companyId: string }) {
                   </div>
 
                   {/* Meta pills */}
-                  {parsed.agent && !isExpanded && (
+                  {r.agent && !isExpanded && (
                     <span style={{ fontSize: "0.75rem", color: KB.textTertiary }}>
-                      by {parsed.agent}
+                      by {r.agent}
                     </span>
                   )}
 
@@ -1442,16 +1427,16 @@ function KBSearchTab({ companyId }: { companyId: string }) {
                       WebkitLineClamp: 2, WebkitBoxOrient: "vertical" as const,
                       overflow: "hidden",
                     }}>
-                      {parsed.content.substring(0, 200)}
+                      {r.excerpt}
                     </div>
                   )}
 
                   {/* Expanded content */}
                   {isExpanded && (
                     <div>
-                      {parsed.agent && (
+                      {r.agent && (
                         <div style={{ fontSize: "0.8rem", color: KB.textTertiary, marginBottom: 12 }}>
-                          Generated by <span style={{ color: KB.textSecondary, fontWeight: 500 }}>{parsed.agent}</span>
+                          Generated by <span style={{ color: KB.textSecondary, fontWeight: 500 }}>{r.agent}</span>
                         </div>
                       )}
                       <div style={{
@@ -1460,7 +1445,7 @@ function KBSearchTab({ companyId }: { companyId: string }) {
                         padding: "14px 16px", borderRadius: KB.radiusSm,
                         background: "rgba(0,0,0,0.15)",
                       }}>
-                        {parsed.content}
+                        {r.cleanContent}
                       </div>
                     </div>
                   )}
@@ -1477,7 +1462,7 @@ function KBSearchTab({ companyId }: { companyId: string }) {
 // ── Documents Tab ───────────────────────────────────────────
 
 function KBDocumentsTab({ companyId }: { companyId: string }) {
-  const { data: docs } = usePluginData<KBDocEntry[]>("kb:list-documents", { companyId });
+  const { data: docs } = usePluginData<ParsedKBEntry[]>("kb:list-documents", { companyId });
   const [uploadName, setUploadName] = useState("");
   const [uploadContent, setUploadContent] = useState("");
   const [uploading, setUploading] = useState(false);
@@ -1694,7 +1679,7 @@ function KBFoldersTab({ companyId }: { companyId: string }) {
 // ── Briefs Tab ──────────────────────────────────────────────
 
 function KBBriefsTab({ companyId }: { companyId: string }) {
-  const { data: briefs, refresh } = usePluginData<KBBrief[]>("kb:list-briefs", { companyId });
+  const { data: briefs, refresh } = usePluginData<ParsedKBEntry[]>("kb:list-briefs", { companyId });
   const [expanded, setExpanded] = useState<string | null>(null);
   const [issueId, setIssueId] = useState("");
   const [generating, setGenerating] = useState(false);
@@ -1802,7 +1787,7 @@ function KBBriefsTab({ companyId }: { companyId: string }) {
                       lineHeight: 1.7, whiteSpace: "pre-wrap",
                       maxHeight: 500, overflowY: "auto",
                     }}>
-                      {b.content}
+                      {b.cleanContent}
                     </div>
                   )}
                 </div>

@@ -963,11 +963,11 @@ ${formatted}`,
       if (!issueId || !companyId) return;
       ctx.logger.info("KB: indexing completed issue", { issueId, identifier });
       try {
-        const issue = await ctx.issues.get({ issueId, companyId });
+        const issue = await ctx.issues.get(issueId, companyId);
         if (!issue) return;
         let comments = [];
         try {
-          comments = await ctx.issues.listComments({ issueId, companyId });
+          comments = await ctx.issues.listComments(issueId, companyId);
         } catch {
         }
         let agentName = "";
@@ -1334,7 +1334,7 @@ ${issue.description.substring(0, 1e3)}` : "",
       if (!apiKey) return { ok: false, error: "API key not available" };
       let issue = null;
       try {
-        issue = await ctx.issues.get({ issueId: issueIdOrIdentifier, companyId });
+        issue = await ctx.issues.get(issueIdOrIdentifier, companyId);
       } catch {
       }
       if (!issue) return { ok: false, error: `Issue "${issueIdOrIdentifier}" not found` };
@@ -1347,7 +1347,7 @@ ${issue.description.substring(0, 1e3)}` : "",
       const subtaskOutputs = [];
       for (const child of children.filter((c) => c.status === "done")) {
         try {
-          const comments = await ctx.issues.listComments({ issueId: child.id, companyId });
+          const comments = await ctx.issues.listComments(child.id, companyId);
           const lastAgentComment = comments.filter((c) => c.authorAgentId).pop();
           subtaskOutputs.push({
             identifier: child.identifier || child.id.substring(0, 8),
@@ -1360,7 +1360,7 @@ ${issue.description.substring(0, 1e3)}` : "",
       if (subtaskOutputs.length === 0) {
         let comments = [];
         try {
-          comments = await ctx.issues.listComments({ issueId, companyId });
+          comments = await ctx.issues.listComments(issueId, companyId);
         } catch {
         }
         const agentComments = comments.filter((c) => c.authorAgentId && c.body.length > 50);

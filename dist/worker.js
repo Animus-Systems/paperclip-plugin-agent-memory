@@ -500,10 +500,19 @@ Format the output as clean markdown starting with: # Executive Brief: ${parentId
       const text = await res.text().catch(() => "");
       return { brief: null, error: `LLM API error (${res.status}): ${text.substring(0, 200)}` };
     }
-    const data = await res.json();
-    const brief = data.choices?.[0]?.message?.content?.trim();
+    const rawText = await res.text();
+    let data;
+    try {
+      data = JSON.parse(rawText);
+    } catch {
+      return { brief: null, error: `LLM returned invalid JSON: ${rawText.substring(0, 200)}` };
+    }
+    const choices = data.choices;
+    const message = choices?.[0]?.message;
+    const brief = message?.content?.trim();
     if (!brief || brief.length < 50) {
-      return { brief: null, error: `LLM returned empty/short response (${brief?.length ?? 0} chars)` };
+      const c0 = JSON.stringify(choices?.[0] ?? null).substring(0, 300);
+      return { brief: null, error: `LLM empty response (${brief?.length ?? 0} chars). choice[0]: ${c0}` };
     }
     return { brief: brief + `
 
@@ -691,7 +700,7 @@ var DEFAULT_CONFIG = {
   llmFallbackModel: "google/gemini-2.5-flash",
   kbAutoIndex: true,
   kbAutoBreif: true,
-  kbBriefModel: "mistralai/mistral-small-3.2-24b-instruct",
+  kbBriefModel: "google/gemini-2.5-flash",
   kbWatchFolders: []
 };
 function kbStatsKey(companyId) {

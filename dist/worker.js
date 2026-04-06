@@ -691,7 +691,7 @@ var DEFAULT_CONFIG = {
   llmFallbackModel: "google/gemini-2.5-flash",
   kbAutoIndex: true,
   kbAutoBreif: true,
-  kbBriefModel: "google/gemini-2.5-flash",
+  kbBriefModel: "mistralai/mistral-small-3.2-24b-instruct",
   kbWatchFolders: []
 };
 function kbStatsKey(companyId) {

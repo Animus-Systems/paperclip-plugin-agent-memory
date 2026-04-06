@@ -1394,13 +1394,15 @@ ${err.stack}` : JSON.stringify(err);
           content: agentComments.map((c) => c.body.substring(0, 2e3)).join("\n\n")
         });
       }
+      const freshCfg = { ...DEFAULT_CONFIG, ...await ctx.config.get() };
+      const briefModel = freshCfg.kbBriefModel || "google/gemini-2.5-flash";
       const result = await generateExecutiveBrief({
         parentTitle: issue.title || "Untitled",
         parentIdentifier: issue.identifier || issueId,
         subtasks: subtaskOutputs,
         apiKey,
         baseUrl: "https://openrouter.ai/api/v1",
-        model: cfg.kbBriefModel
+        model: briefModel
       });
       if (!result.brief) return { ok: false, error: result.error || "Brief generation failed" };
       const brief = result.brief;

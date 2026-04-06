@@ -883,13 +883,17 @@ const plugin = definePlugin({
         });
       }
 
+      // Read model from fresh config (not startup cache)
+      const freshCfg = { ...DEFAULT_CONFIG, ...((await ctx.config.get()) as Record<string, unknown>) };
+      const briefModel = (freshCfg.kbBriefModel || "google/gemini-2.5-flash") as string;
+
       const result = await generateExecutiveBrief({
         parentTitle: (issue.title || "Untitled") as string,
         parentIdentifier: (issue.identifier || issueId) as string,
         subtasks: subtaskOutputs,
         apiKey,
         baseUrl: "https://openrouter.ai/api/v1",
-        model: cfg.kbBriefModel,
+        model: briefModel,
       });
 
       if (!result.brief) return { ok: false, error: result.error || "Brief generation failed" };

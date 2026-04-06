@@ -823,11 +823,7 @@ const plugin = definePlugin({
       }
     });
 
-    /** Generate executive brief for an issue.
-     *  NOTE: Uses HTTP instead of SDK RPC to avoid deadlock — action handlers
-     *  that call ctx.issues.get/list/listComments create nested RPC which
-     *  blocks the single-threaded worker.
-     */
+    /** Generate executive brief for an issue. */
     ctx.actions.register("kb:generate-brief", async (params: Record<string, unknown>) => {
       const companyId = params.companyId as string;
       const issueIdOrIdentifier = params.issueId as string;
@@ -836,39 +832,34 @@ const plugin = definePlugin({
       const apiKey = process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY || "";
       if (!apiKey) return { ok: false, error: "API key not available" };
 
-      const port = process.env.PORT || "3100";
-      const hdr = { "Content-Type": "application/json" };
-
-      // Fetch issue via HTTP (avoids RPC deadlock)
+      // Fetch issue via SDK (supports both UUID and identifier like ANI-859)
       let issue: Record<string, unknown> | null = null;
       try {
-        const r = await fetch(`http://localhost:${port}/api/issues/${encodeURIComponent(issueIdOrIdentifier)}`, { headers: hdr, signal: AbortSignal.timeout(5000) });
-        if (r.ok) issue = await r.json() as Record<string, unknown>;
-      } catch { /* */ }
+        issue = (await (ctx.issues as any).get(issueIdOrIdentifier, companyId)) as Record<string, unknown> | null;
+      } catch (err) {
+        ctx.logger.warn("KB brief: issues.get failed", { issueIdOrIdentifier, error: String(err).substring(0, 200) });
+      }
       if (!issue) return { ok: false, error: `Issue "${issueIdOrIdentifier}" not found` };
 
       const issueId = issue.id as string;
+      ctx.logger.info("KB brief: issue found", { issueId, identifier: issue.identifier, title: (issue.title as string)?.substring(0, 50) });
 
       // Check for subtasks
       let children: Array<Record<string, unknown>> = [];
       try {
-        const r = await fetch(`http://localhost:${port}/api/companies/${companyId}/issues?parentId=${issueId}`, { headers: hdr, signal: AbortSignal.timeout(5000) });
-        if (r.ok) children = await r.json() as Array<Record<string, unknown>>;
+        children = (await ctx.issues.list({ companyId, parentId: issueId } as Record<string, unknown>)) as Array<Record<string, unknown>>;
       } catch { /* */ }
 
       const subtaskOutputs: Array<{ identifier: string; title: string; content: string }> = [];
       for (const child of children.filter((c) => c.status === "done")) {
         try {
-          const r = await fetch(`http://localhost:${port}/api/issues/${child.id}/comments`, { headers: hdr, signal: AbortSignal.timeout(5000) });
-          if (r.ok) {
-            const comments = await r.json() as Array<Record<string, unknown>>;
-            const lastAgentComment = comments.filter((c) => c.authorAgentId).pop();
-            subtaskOutputs.push({
-              identifier: (child.identifier || (child.id as string).substring(0, 8)) as string,
-              title: (child.title || "Untitled") as string,
-              content: ((lastAgentComment?.body as string) ?? "(no output)").substring(0, 3000),
-            });
-          }
+          const comments = await (ctx.issues as any).listComments(child.id as string, companyId) as Array<Record<string, unknown>>;
+          const lastAgentComment = comments.filter((c: Record<string, unknown>) => c.authorAgentId).pop();
+          subtaskOutputs.push({
+            identifier: (child.identifier || (child.id as string).substring(0, 8)) as string,
+            title: (child.title || "Untitled") as string,
+            content: ((lastAgentComment?.body as string) ?? "(no output)").substring(0, 3000),
+          });
         } catch { /* skip */ }
       }
 
@@ -876,9 +867,11 @@ const plugin = definePlugin({
         // No subtasks — generate brief from issue comments directly
         let comments: Array<Record<string, unknown>> = [];
         try {
-          const r = await fetch(`http://localhost:${port}/api/issues/${issueId}/comments`, { headers: hdr, signal: AbortSignal.timeout(5000) });
-          if (r.ok) comments = await r.json() as Array<Record<string, unknown>>;
-        } catch { /* */ }
+          comments = await (ctx.issues as any).listComments(issueId, companyId) as Array<Record<string, unknown>>;
+          ctx.logger.info("KB brief: got comments", { issueId, count: comments.length });
+        } catch (err) {
+          ctx.logger.error("KB brief: listComments error", { error: String(err).substring(0, 200) });
+        }
         const agentComments = comments.filter((c) => c.authorAgentId && String(c.body ?? "").length > 50);
         if (agentComments.length === 0) return { ok: false, error: `No agent output (${comments.length} comments, none from agents)` };
         subtaskOutputs.push({

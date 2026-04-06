@@ -1347,44 +1347,40 @@ ${issue.description.substring(0, 1e3)}` : "",
       if (!companyId || !issueIdOrIdentifier) return { ok: false, error: "companyId and issueId required" };
       const apiKey = process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY || "";
       if (!apiKey) return { ok: false, error: "API key not available" };
-      const port2 = process.env.PORT || "3100";
-      const hdr = { "Content-Type": "application/json" };
       let issue = null;
       try {
-        const r = await fetch(`http://localhost:${port2}/api/issues/${encodeURIComponent(issueIdOrIdentifier)}`, { headers: hdr, signal: AbortSignal.timeout(5e3) });
-        if (r.ok) issue = await r.json();
-      } catch {
+        issue = await ctx.issues.get(issueIdOrIdentifier, companyId);
+      } catch (err) {
+        ctx.logger.warn("KB brief: issues.get failed", { issueIdOrIdentifier, error: String(err).substring(0, 200) });
       }
       if (!issue) return { ok: false, error: `Issue "${issueIdOrIdentifier}" not found` };
       const issueId = issue.id;
+      ctx.logger.info("KB brief: issue found", { issueId, identifier: issue.identifier, title: issue.title?.substring(0, 50) });
       let children = [];
       try {
-        const r = await fetch(`http://localhost:${port2}/api/companies/${companyId}/issues?parentId=${issueId}`, { headers: hdr, signal: AbortSignal.timeout(5e3) });
-        if (r.ok) children = await r.json();
+        children = await ctx.issues.list({ companyId, parentId: issueId });
       } catch {
       }
       const subtaskOutputs = [];
       for (const child of children.filter((c) => c.status === "done")) {
         try {
-          const r = await fetch(`http://localhost:${port2}/api/issues/${child.id}/comments`, { headers: hdr, signal: AbortSignal.timeout(5e3) });
-          if (r.ok) {
-            const comments = await r.json();
-            const lastAgentComment = comments.filter((c) => c.authorAgentId).pop();
-            subtaskOutputs.push({
-              identifier: child.identifier || child.id.substring(0, 8),
-              title: child.title || "Untitled",
-              content: (lastAgentComment?.body ?? "(no output)").substring(0, 3e3)
-            });
-          }
+          const comments = await ctx.issues.listComments(child.id, companyId);
+          const lastAgentComment = comments.filter((c) => c.authorAgentId).pop();
+          subtaskOutputs.push({
+            identifier: child.identifier || child.id.substring(0, 8),
+            title: child.title || "Untitled",
+            content: (lastAgentComment?.body ?? "(no output)").substring(0, 3e3)
+          });
         } catch {
         }
       }
       if (subtaskOutputs.length === 0) {
         let comments = [];
         try {
-          const r = await fetch(`http://localhost:${port2}/api/issues/${issueId}/comments`, { headers: hdr, signal: AbortSignal.timeout(5e3) });
-          if (r.ok) comments = await r.json();
-        } catch {
+          comments = await ctx.issues.listComments(issueId, companyId);
+          ctx.logger.info("KB brief: got comments", { issueId, count: comments.length });
+        } catch (err) {
+          ctx.logger.error("KB brief: listComments error", { error: String(err).substring(0, 200) });
         }
         const agentComments = comments.filter((c) => c.authorAgentId && String(c.body ?? "").length > 50);
         if (agentComments.length === 0) return { ok: false, error: `No agent output (${comments.length} comments, none from agents)` };

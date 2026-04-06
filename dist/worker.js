@@ -967,7 +967,7 @@ ${formatted}`,
         if (!issue) return;
         let comments = [];
         try {
-          comments = await ctx.issues.listComments({ issueId });
+          comments = await ctx.issues.listComments({ issueId, companyId });
         } catch {
         }
         let agentName = "";
@@ -1350,7 +1350,7 @@ ${issue.description.substring(0, 1e3)}` : "",
       const subtaskOutputs = [];
       for (const child of children.filter((c) => c.status === "done")) {
         try {
-          const comments = await ctx.issues.listComments({ issueId: child.id });
+          const comments = await ctx.issues.listComments({ issueId: child.id, companyId });
           const lastAgentComment = comments.filter((c) => c.authorAgentId).pop();
           subtaskOutputs.push({
             identifier: child.identifier || child.id.substring(0, 8),
@@ -1363,7 +1363,7 @@ ${issue.description.substring(0, 1e3)}` : "",
       if (subtaskOutputs.length === 0) {
         let comments = [];
         try {
-          comments = await ctx.issues.listComments({ issueId });
+          comments = await ctx.issues.listComments({ issueId, companyId });
         } catch {
         }
         const agentComments = comments.filter((c) => c.authorAgentId && c.body.length > 50);

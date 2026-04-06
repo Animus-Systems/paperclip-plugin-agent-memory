@@ -377,7 +377,7 @@ const plugin = definePlugin({
 
         let comments: Array<Record<string, unknown>> = [];
         try {
-          comments = (await ctx.issues.listComments({ issueId } as Record<string, unknown>)) as Array<Record<string, unknown>>;
+          comments = (await ctx.issues.listComments({ issueId, companyId } as Record<string, unknown>)) as Array<Record<string, unknown>>;
         } catch { /* */ }
 
         // Get agent name
@@ -853,7 +853,7 @@ const plugin = definePlugin({
       const subtaskOutputs: Array<{ identifier: string; title: string; content: string }> = [];
       for (const child of children.filter((c) => c.status === "done")) {
         try {
-          const comments = await ctx.issues.listComments({ issueId: child.id as string } as Record<string, unknown>) as Array<Record<string, unknown>>;
+          const comments = await ctx.issues.listComments({ issueId: child.id as string, companyId } as Record<string, unknown>) as Array<Record<string, unknown>>;
           const lastAgentComment = comments.filter((c) => c.authorAgentId).pop();
           subtaskOutputs.push({
             identifier: (child.identifier || (child.id as string).substring(0, 8)) as string,
@@ -867,7 +867,7 @@ const plugin = definePlugin({
         // No subtasks — generate brief from issue comments directly
         let comments: Array<Record<string, unknown>> = [];
         try {
-          comments = (await ctx.issues.listComments({ issueId } as Record<string, unknown>)) as Array<Record<string, unknown>>;
+          comments = (await ctx.issues.listComments({ issueId, companyId } as Record<string, unknown>)) as Array<Record<string, unknown>>;
         } catch { /* */ }
         const agentComments = comments.filter((c) => c.authorAgentId && (c.body as string).length > 50);
         if (agentComments.length === 0) return { ok: false, error: "No agent output to summarize" };

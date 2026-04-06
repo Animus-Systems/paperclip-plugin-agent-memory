@@ -512,7 +512,7 @@ export function MemorySettingsPage({ context }: PluginSettingsPageProps) {
         llmFallbackModel: cfg.llmFallbackModel,
         kbAutoIndex: cfg.kbAutoIndex ?? true,
         kbAutoBreif: cfg.kbAutoBreif ?? true,
-        kbBriefModel: cfg.kbBriefModel ?? "deepseek/deepseek-v3.2",
+        kbBriefModel: cfg.kbBriefModel ?? "mistralai/mistral-small-3.2-24b-instruct",
         kbWatchFolders: cfg.kbWatchFolders ?? [],
       };
       const res = await fetch(`/api/plugins/animusystems.agent-memory/config`, {
@@ -660,7 +660,7 @@ export function MemorySettingsPage({ context }: PluginSettingsPageProps) {
         </div>
         <div style={configRow}>
           <span style={muted}>Brief generation model</span>
-          <input style={inputStyle} value={String(cfg.kbBriefModel ?? "deepseek/deepseek-v3.2")} onChange={(e) => handleChange("kbBriefModel", e.target.value)} />
+          <input style={inputStyle} value={String(cfg.kbBriefModel ?? "mistralai/mistral-small-3.2-24b-instruct")} onChange={(e) => handleChange("kbBriefModel", e.target.value)} />
         </div>
         <div style={{ ...configRow, borderBottom: "none", flexDirection: "column", alignItems: "stretch", gap: 6 }}>
           <span style={muted}>Watch folders (one per line — indexed every 6 hours)</span>

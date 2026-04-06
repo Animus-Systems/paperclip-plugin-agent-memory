@@ -958,7 +958,7 @@ ${formatted}`,
       const status = payload?.status;
       if (status !== "done") return;
       const companyId = event.companyId;
-      const issueId = payload?.entityId ?? payload?.issueId ?? "";
+      const issueId = event.entityId || (payload?.entityId ?? payload?.issueId ?? "");
       const identifier = payload?.identifier ?? "";
       if (!issueId || !companyId) return;
       ctx.logger.info("KB: indexing completed issue", { issueId, identifier });

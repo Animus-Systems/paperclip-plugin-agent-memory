@@ -364,7 +364,7 @@ const plugin = definePlugin({
       if (status !== "done") return;
 
       const companyId = event.companyId;
-      const issueId = (payload?.entityId ?? payload?.issueId ?? "") as string;
+      const issueId = event.entityId || (payload?.entityId ?? payload?.issueId ?? "") as string;
       const identifier = (payload?.identifier ?? "") as string;
       if (!issueId || !companyId) return;
 

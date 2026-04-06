@@ -8,6 +8,7 @@ import type { MemoryPluginConfig, MemoryStats, Memory, KBStats } from "./worker/
 import { generateExecutiveBrief } from "./worker/brief-generator.js";
 import { parseFile, isSupportedFile, ensurePythonDeps } from "./worker/file-parser.js";
 import { parseKBMemory } from "./worker/kb-utils.js";
+import { scanAndRedact, isSensitiveFile, formatDetectionSummary } from "./worker/sanitizer.js";
 
 const DEFAULT_CONFIG: MemoryPluginConfig = {
   enabled: true,
@@ -292,7 +293,7 @@ const plugin = definePlugin({
           const full = join(dir, entry.name);
           if (entry.isDirectory() && recursive && !entry.name.startsWith(".") && entry.name !== "node_modules") {
             await walk(full);
-          } else if (entry.isFile() && isSupportedFile(full)) {
+          } else if (entry.isFile() && isSupportedFile(full) && !isSensitiveFile(full)) {
             files.push(full);
           }
         }
@@ -319,8 +320,15 @@ const plugin = definePlugin({
           const result = await parseFile(filePath);
           if (result.text.length < 20) { skipped++; continue; }
 
+          // Sanitize content before storing
+          const scan = scanAndRedact(result.text);
+          if (scan.hasSensitiveData) {
+            ctx.logger.warn(`KB: redacted sensitive data in ${filePath}: ${formatDetectionSummary(scan.detections)}`);
+          }
+          const safeText = scan.redactedContent;
+
           const name = basename(filePath);
-          await client.storeKnowledgeEntry(result.text.substring(0, 8000), {
+          await client.storeKnowledgeEntry(safeText.substring(0, 8000), {
             companyId,
             title: name,
             source: "document",
@@ -400,13 +408,20 @@ const plugin = definePlugin({
           return;
         }
 
-        const content = [
+        const rawContent = [
           `# ${issue.identifier || issueId}: ${issue.title || "Untitled"}`,
           "",
           issue.description ? `## Task Description\n${(issue.description as string).substring(0, 1000)}` : "",
           "",
           ...agentComments.map((c) => (c.body as string).substring(0, 2000)),
         ].filter(Boolean).join("\n\n");
+
+        // Sanitize before storing
+        const issueScan = scanAndRedact(rawContent);
+        if (issueScan.hasSensitiveData) {
+          ctx.logger.warn(`KB: redacted sensitive data from issue ${issue.identifier}: ${formatDetectionSummary(issueScan.detections)}`);
+        }
+        const content = issueScan.redactedContent;
 
         await client.storeKnowledgeEntry(content, {
           companyId,
@@ -778,7 +793,13 @@ const plugin = definePlugin({
       const tags = (params.tags as string[] | undefined) ?? [];
       if (!companyId || !name || !content) return { ok: false, error: "name and content required" };
 
-      const { chunkCount } = await client.storeDocument(name, content, companyId, tags);
+      // Sanitize uploaded content
+      const uploadScan = scanAndRedact(content);
+      if (uploadScan.hasSensitiveData) {
+        ctx.logger.warn(`KB: redacted sensitive data from upload "${name}": ${formatDetectionSummary(uploadScan.detections)}`);
+      }
+
+      const { chunkCount } = await client.storeDocument(name, uploadScan.redactedContent, companyId, tags);
 
       const kbStats = ((await ctx.state.get(kbStatsKey(companyId))) ?? emptyKBStats()) as KBStats;
       kbStats.uploadedDocuments++;

@@ -1,4 +1,5 @@
 import type { Memory, MemoryMetadata } from "./types.js";
+import { scanAndRedact } from "./sanitizer.js";
 
 /**
  * MemOS REST API client.
@@ -60,6 +61,10 @@ export class MemosClient {
     content: string,
     meta: MemoryMetadata,
   ): Promise<{ taskId?: string }> {
+    // Sanitize content before storing
+    const scan = scanAndRedact(content);
+    const safeContent = scan.redactedContent;
+
     const cubeId = meta.companyId;
     const res = await fetch(`${this.baseUrl}/product/add`, {
       method: "POST",
@@ -70,7 +75,7 @@ export class MemosClient {
         messages: [
           {
             role: "assistant",
-            content: this.formatMemoryContent(content, meta),
+            content: this.formatMemoryContent(safeContent, meta),
           },
         ],
         async_mode: "sync",
@@ -208,8 +213,12 @@ export class MemosClient {
     const kbUserId = `kb-${opts.companyId}`;
     await this.registerUser(kbUserId, "Knowledge Base");
 
+    // Sanitize content before storing
+    const kbScan = scanAndRedact(content);
+    const safeContent = kbScan.redactedContent;
+
     const metaParts = [
-      content,
+      safeContent,
       `[type: knowledge_base]`,
       `[kb_source: ${opts.source}]`,
       `[title: ${opts.title}]`,

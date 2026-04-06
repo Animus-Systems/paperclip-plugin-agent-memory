@@ -1,6 +1,151 @@
 // src/worker.ts
 import { definePlugin, startWorkerRpcHost } from "@paperclipai/plugin-sdk";
 
+// src/worker/sanitizer.ts
+import { basename } from "node:path";
+var SENSITIVE_FILENAMES = /* @__PURE__ */ new Set([
+  ".env",
+  ".env.local",
+  ".env.production",
+  ".env.development",
+  ".env.staging",
+  ".env.test",
+  ".npmrc",
+  ".pypirc",
+  ".netrc",
+  ".pgpass",
+  ".my.cnf",
+  ".docker/config.json",
+  "credentials.json",
+  "credentials.yaml",
+  "credentials.yml",
+  "service-account.json",
+  "serviceAccountKey.json",
+  "secrets.json",
+  "secrets.yaml",
+  "secrets.yml",
+  "vault.json",
+  ".htpasswd",
+  "shadow",
+  "id_rsa",
+  "id_ed25519",
+  "id_ecdsa",
+  "id_dsa",
+  "known_hosts",
+  "authorized_keys"
+]);
+var SENSITIVE_EXTENSIONS = /* @__PURE__ */ new Set([
+  ".pem",
+  ".key",
+  ".p12",
+  ".pfx",
+  ".jks",
+  ".keystore",
+  ".crt",
+  ".cer",
+  ".der",
+  ".pkcs8"
+]);
+function isSensitiveFile(filePath) {
+  const name = basename(filePath).toLowerCase();
+  if (SENSITIVE_FILENAMES.has(name)) return true;
+  for (const ext of SENSITIVE_EXTENSIONS) {
+    if (name.endsWith(ext)) return true;
+  }
+  if (name.startsWith(".env")) return true;
+  if (name.includes("credential")) return true;
+  if (name.includes("secret") && (name.endsWith(".json") || name.endsWith(".yaml") || name.endsWith(".yml") || name.endsWith(".toml"))) return true;
+  return false;
+}
+var SENSITIVE_PATTERNS = [
+  // Credit card numbers (Visa, MC, Amex, Discover)
+  {
+    name: "credit_card",
+    regex: /\b(?:4[0-9]{3}|5[1-5][0-9]{2}|3[47][0-9]{2}|6(?:011|5[0-9]{2}))[- ]?[0-9]{4}[- ]?[0-9]{4}[- ]?[0-9]{1,4}\b/g,
+    redaction: "[REDACTED:credit_card]"
+  },
+  // IBAN
+  {
+    name: "iban",
+    regex: /\b[A-Z]{2}\d{2}[- ]?[A-Z0-9]{4}[- ]?(?:\d{4}[- ]?){2,7}\d{1,4}\b/g,
+    redaction: "[REDACTED:iban]"
+  },
+  // Social Security Numbers (US)
+  {
+    name: "ssn",
+    regex: /\b\d{3}[- ]\d{2}[- ]\d{4}\b/g,
+    redaction: "[REDACTED:ssn]"
+  },
+  // Private keys (PEM format)
+  {
+    name: "private_key",
+    regex: /-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----/g,
+    redaction: "[REDACTED:private_key]"
+  },
+  // AWS Access Keys
+  {
+    name: "aws_key",
+    regex: /\b(?:AKIA|ABIA|ACCA|ASIA)[A-Z0-9]{16}\b/g,
+    redaction: "[REDACTED:aws_key]"
+  },
+  // AWS Secret Keys
+  {
+    name: "aws_secret",
+    regex: /(?<=aws_secret_access_key\s*=\s*|AWS_SECRET_ACCESS_KEY\s*=\s*)[A-Za-z0-9/+=]{40}/g,
+    redaction: "[REDACTED:aws_secret]"
+  },
+  // Generic API keys (sk-xxx, key-xxx, api_key=xxx patterns)
+  {
+    name: "api_key",
+    regex: /\b(?:sk-(?:or-v1-)?[a-zA-Z0-9]{20,}|key-[a-zA-Z0-9]{20,}|ghp_[a-zA-Z0-9]{36}|gho_[a-zA-Z0-9]{36}|glpat-[a-zA-Z0-9\-]{20,}|xox[bps]-[a-zA-Z0-9\-]{10,})\b/g,
+    redaction: "[REDACTED:api_key]"
+  },
+  // Password assignments (password = "xxx", password: xxx, etc.)
+  {
+    name: "password",
+    regex: /(?:password|passwd|pwd|secret|token|api_key|apikey|access_token|auth_token)[\s]*[:=][\s]*["']?[^\s"',;}{]{6,}["']?/gi,
+    redaction: "[REDACTED:password]"
+  },
+  // Bearer tokens
+  {
+    name: "bearer_token",
+    regex: /Bearer\s+[a-zA-Z0-9\-._~+/]+=*/g,
+    redaction: "[REDACTED:bearer_token]"
+  },
+  // Connection strings with credentials
+  {
+    name: "connection_string",
+    regex: /(?:postgres|mysql|mongodb|redis|amqp|smtp):\/\/[^:]+:[^@]+@[^\s"']+/gi,
+    redaction: "[REDACTED:connection_string]"
+  },
+  // JWT tokens (3 base64 sections separated by dots)
+  {
+    name: "jwt",
+    regex: /\beyJ[a-zA-Z0-9_-]{20,}\.eyJ[a-zA-Z0-9_-]{20,}\.[a-zA-Z0-9_-]{20,}\b/g,
+    redaction: "[REDACTED:jwt]"
+  }
+];
+function scanAndRedact(content) {
+  const detections = [];
+  let redacted = content;
+  for (const pattern of SENSITIVE_PATTERNS) {
+    const matches = redacted.match(pattern.regex);
+    if (matches && matches.length > 0) {
+      detections.push({ type: pattern.name, count: matches.length });
+      redacted = redacted.replace(pattern.regex, pattern.redaction);
+    }
+  }
+  return {
+    hasSensitiveData: detections.length > 0,
+    detections,
+    redactedContent: redacted
+  };
+}
+function formatDetectionSummary(detections) {
+  if (detections.length === 0) return "clean";
+  return detections.map((d) => `${d.count}x ${d.type}`).join(", ");
+}
+
 // src/worker/memos-client.ts
 var MemosClient = class {
   baseUrl;
@@ -39,6 +184,8 @@ var MemosClient = class {
   // ── Store memory ───────────────────────────────────────────
   /** Store content as memory for an agent in a company cube. */
   async storeMemory(content, meta) {
+    const scan = scanAndRedact(content);
+    const safeContent = scan.redactedContent;
     const cubeId = meta.companyId;
     const res = await fetch(`${this.baseUrl}/product/add`, {
       method: "POST",
@@ -49,7 +196,7 @@ var MemosClient = class {
         messages: [
           {
             role: "assistant",
-            content: this.formatMemoryContent(content, meta)
+            content: this.formatMemoryContent(safeContent, meta)
           }
         ],
         async_mode: "sync"
@@ -141,8 +288,10 @@ var MemosClient = class {
   async storeKnowledgeEntry(content, opts) {
     const kbUserId = `kb-${opts.companyId}`;
     await this.registerUser(kbUserId, "Knowledge Base");
+    const kbScan = scanAndRedact(content);
+    const safeContent = kbScan.redactedContent;
     const metaParts = [
-      content,
+      safeContent,
       `[type: knowledge_base]`,
       `[kb_source: ${opts.source}]`,
       `[title: ${opts.title}]`
@@ -948,7 +1097,7 @@ ${formatted}`,
     );
     async function indexFolder(folderPath, companyId, recursive) {
       const { readdir, stat, readFile: readFileRaw } = await import("node:fs/promises");
-      const { join, basename } = await import("node:path");
+      const { join, basename: basename2 } = await import("node:path");
       const { createHash } = await import("node:crypto");
       const manifestKey = { scopeKind: "company", scopeId: companyId, stateKey: "kb-file-hashes" };
       const hashManifest = await ctx.state.get(manifestKey) ?? {};
@@ -959,7 +1108,7 @@ ${formatted}`,
           const full = join(dir, entry.name);
           if (entry.isDirectory() && recursive && !entry.name.startsWith(".") && entry.name !== "node_modules") {
             await walk(full);
-          } else if (entry.isFile() && isSupportedFile(full)) {
+          } else if (entry.isFile() && isSupportedFile(full) && !isSensitiveFile(full)) {
             files.push(full);
           }
         }
@@ -992,8 +1141,13 @@ ${formatted}`,
             skipped++;
             continue;
           }
-          const name = basename(filePath);
-          await client.storeKnowledgeEntry(result.text.substring(0, 8e3), {
+          const scan = scanAndRedact(result.text);
+          if (scan.hasSensitiveData) {
+            ctx.logger.warn(`KB: redacted sensitive data in ${filePath}: ${formatDetectionSummary(scan.detections)}`);
+          }
+          const safeText = scan.redactedContent;
+          const name = basename2(filePath);
+          await client.storeKnowledgeEntry(safeText.substring(0, 8e3), {
             companyId,
             title: name,
             source: "document",
@@ -1049,7 +1203,7 @@ ${formatted}`,
           ctx.logger.debug("KB: no substantial content to index", { issueId });
           return;
         }
-        const content = [
+        const rawContent = [
           `# ${issue.identifier || issueId}: ${issue.title || "Untitled"}`,
           "",
           issue.description ? `## Task Description
@@ -1057,6 +1211,11 @@ ${issue.description.substring(0, 1e3)}` : "",
           "",
           ...agentComments.map((c) => c.body.substring(0, 2e3))
         ].filter(Boolean).join("\n\n");
+        const issueScan = scanAndRedact(rawContent);
+        if (issueScan.hasSensitiveData) {
+          ctx.logger.warn(`KB: redacted sensitive data from issue ${issue.identifier}: ${formatDetectionSummary(issueScan.detections)}`);
+        }
+        const content = issueScan.redactedContent;
         await client.storeKnowledgeEntry(content, {
           companyId,
           title: `${issue.identifier || ""} ${issue.title || ""}`.trim(),
@@ -1356,7 +1515,11 @@ ${issue.description.substring(0, 1e3)}` : "",
       const content = params.content;
       const tags = params.tags ?? [];
       if (!companyId || !name || !content) return { ok: false, error: "name and content required" };
-      const { chunkCount } = await client.storeDocument(name, content, companyId, tags);
+      const uploadScan = scanAndRedact(content);
+      if (uploadScan.hasSensitiveData) {
+        ctx.logger.warn(`KB: redacted sensitive data from upload "${name}": ${formatDetectionSummary(uploadScan.detections)}`);
+      }
+      const { chunkCount } = await client.storeDocument(name, uploadScan.redactedContent, companyId, tags);
       const kbStats = await ctx.state.get(kbStatsKey(companyId)) ?? emptyKBStats();
       kbStats.uploadedDocuments++;
       await ctx.state.set(kbStatsKey(companyId), kbStats);

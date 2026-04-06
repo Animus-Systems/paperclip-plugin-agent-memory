@@ -401,7 +401,10 @@ function MemorySettingsPage({ context }) {
         injectionTokenBudget: cfg.injectionTokenBudget,
         extractionMode: cfg.extractionMode,
         llmExtractionModel: cfg.llmExtractionModel,
-        llmFallbackModel: cfg.llmFallbackModel
+        llmFallbackModel: cfg.llmFallbackModel,
+        kbAutoIndex: cfg.kbAutoIndex ?? true,
+        kbAutoBreif: cfg.kbAutoBreif ?? true,
+        kbBriefModel: cfg.kbBriefModel ?? "deepseek/deepseek-v3.2"
       };
       const res = await fetch(`/api/plugins/animusystems.agent-memory/config`, {
         method: "POST",
@@ -541,9 +544,24 @@ function MemorySettingsPage({ context }) {
         /* @__PURE__ */ jsx("span", { style: muted, children: "Max memories per injection" }),
         /* @__PURE__ */ jsx("input", { style: { ...selectStyle, width: 80, textAlign: "center" }, type: "number", min: 1, max: 20, value: cfg.maxMemoriesPerInjection, onChange: (e) => handleChange("maxMemoriesPerInjection", parseInt(e.target.value) || 5) })
       ] }),
-      /* @__PURE__ */ jsxs("div", { style: { ...configRow, borderBottom: "none" }, children: [
+      /* @__PURE__ */ jsxs("div", { style: configRow, children: [
         /* @__PURE__ */ jsx("span", { style: muted, children: "Token budget" }),
         /* @__PURE__ */ jsx("input", { style: { ...selectStyle, width: 100, textAlign: "center" }, type: "number", min: 100, max: 5e3, step: 100, value: cfg.injectionTokenBudget, onChange: (e) => handleChange("injectionTokenBudget", parseInt(e.target.value) || 800) })
+      ] })
+    ] }),
+    /* @__PURE__ */ jsx("div", { style: sectionTitle, children: "Knowledge Base" }),
+    /* @__PURE__ */ jsxs("div", { style: card, children: [
+      /* @__PURE__ */ jsxs("div", { style: configRow, children: [
+        /* @__PURE__ */ jsx("span", { style: muted, children: "Auto-index completed issues" }),
+        /* @__PURE__ */ jsx("button", { style: toggleStyle(cfg.kbAutoIndex ?? true), onClick: () => handleChange("kbAutoIndex", !(cfg.kbAutoIndex ?? true)), children: cfg.kbAutoIndex ?? true ? "enabled" : "disabled" })
+      ] }),
+      /* @__PURE__ */ jsxs("div", { style: configRow, children: [
+        /* @__PURE__ */ jsx("span", { style: muted, children: "Auto-generate executive briefs" }),
+        /* @__PURE__ */ jsx("button", { style: toggleStyle(cfg.kbAutoBreif ?? true), onClick: () => handleChange("kbAutoBreif", !(cfg.kbAutoBreif ?? true)), children: cfg.kbAutoBreif ?? true ? "enabled" : "disabled" })
+      ] }),
+      /* @__PURE__ */ jsxs("div", { style: { ...configRow, borderBottom: "none" }, children: [
+        /* @__PURE__ */ jsx("span", { style: muted, children: "Brief generation model" }),
+        /* @__PURE__ */ jsx("input", { style: inputStyle, value: String(cfg.kbBriefModel ?? "deepseek/deepseek-v3.2"), onChange: (e) => handleChange("kbBriefModel", e.target.value) })
       ] })
     ] }),
     hasChanges && /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10, marginTop: 12 }, children: [

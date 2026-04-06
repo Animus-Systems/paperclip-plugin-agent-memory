@@ -510,6 +510,9 @@ export function MemorySettingsPage({ context }: PluginSettingsPageProps) {
         extractionMode: cfg.extractionMode,
         llmExtractionModel: cfg.llmExtractionModel,
         llmFallbackModel: cfg.llmFallbackModel,
+        kbAutoIndex: cfg.kbAutoIndex ?? true,
+        kbAutoBreif: cfg.kbAutoBreif ?? true,
+        kbBriefModel: cfg.kbBriefModel ?? "deepseek/deepseek-v3.2",
       };
       const res = await fetch(`/api/plugins/animusystems.agent-memory/config`, {
         method: "POST",
@@ -634,9 +637,29 @@ export function MemorySettingsPage({ context }: PluginSettingsPageProps) {
           <span style={muted}>Max memories per injection</span>
           <input style={{ ...selectStyle, width: 80, textAlign: "center" }} type="number" min={1} max={20} value={cfg.maxMemoriesPerInjection as number} onChange={(e) => handleChange("maxMemoriesPerInjection", parseInt(e.target.value) || 5)} />
         </div>
-        <div style={{ ...configRow, borderBottom: "none" }}>
+        <div style={configRow}>
           <span style={muted}>Token budget</span>
           <input style={{ ...selectStyle, width: 100, textAlign: "center" }} type="number" min={100} max={5000} step={100} value={cfg.injectionTokenBudget as number} onChange={(e) => handleChange("injectionTokenBudget", parseInt(e.target.value) || 800)} />
+        </div>
+      </div>
+
+      <div style={sectionTitle}>Knowledge Base</div>
+      <div style={card}>
+        <div style={configRow}>
+          <span style={muted}>Auto-index completed issues</span>
+          <button style={toggleStyle(cfg.kbAutoIndex as boolean ?? true)} onClick={() => handleChange("kbAutoIndex", !(cfg.kbAutoIndex ?? true))}>
+            {(cfg.kbAutoIndex ?? true) ? "enabled" : "disabled"}
+          </button>
+        </div>
+        <div style={configRow}>
+          <span style={muted}>Auto-generate executive briefs</span>
+          <button style={toggleStyle(cfg.kbAutoBreif as boolean ?? true)} onClick={() => handleChange("kbAutoBreif", !(cfg.kbAutoBreif ?? true))}>
+            {(cfg.kbAutoBreif ?? true) ? "enabled" : "disabled"}
+          </button>
+        </div>
+        <div style={{ ...configRow, borderBottom: "none" }}>
+          <span style={muted}>Brief generation model</span>
+          <input style={inputStyle} value={String(cfg.kbBriefModel ?? "deepseek/deepseek-v3.2")} onChange={(e) => handleChange("kbBriefModel", e.target.value)} />
         </div>
       </div>
 

@@ -1237,6 +1237,41 @@ ${issue.description.substring(0, 1e3)}` : "",
           entityId: issueId
         });
         ctx.logger.info("KB: indexed issue", { issueId, identifier: issue.identifier, contentLen: content.length });
+        if (issue.projectId) {
+          try {
+            const fs = await import("node:fs/promises");
+            const path = await import("node:path");
+            const projectDir = `/paperclip/.paperclip/instances/default/projects/${companyId}/${issue.projectId}/_default`;
+            const deliverablesDir = path.resolve(projectDir, "deliverables");
+            await fs.mkdir(deliverablesDir, { recursive: true });
+            const slug = (issue.title || "untitled").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").substring(0, 60);
+            const filename = `${issue.identifier || issueId}-${slug}.md`;
+            const filepath = path.resolve(deliverablesDir, filename);
+            const completedAt = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+            const fileContent = [
+              "---",
+              `identifier: ${issue.identifier || issueId}`,
+              `title: ${(issue.title || "").replace(/"/g, '\\"')}`,
+              agentName ? `agent: ${agentName}` : "",
+              `completed: ${completedAt}`,
+              `source: paperclip-agent-memory`,
+              "---",
+              "",
+              `# ${issue.identifier || issueId}: ${issue.title || "Untitled"}`,
+              "",
+              issue.description ? `## Task
+${issue.description}
+` : "",
+              "## Output",
+              "",
+              ...agentComments.map((c) => c.body)
+            ].filter(Boolean).join("\n");
+            await fs.writeFile(filepath, fileContent, "utf-8");
+            ctx.logger.info(`KB: exported deliverable to ${filepath}`);
+          } catch (err) {
+            ctx.logger.warn(`KB: failed to export deliverable file: ${err}`);
+          }
+        }
         if (cfg.kbAutoBreif && issue.parentId) {
         }
         if (cfg.kbAutoBreif && !issue.parentId) {

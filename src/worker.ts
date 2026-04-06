@@ -449,6 +449,50 @@ const plugin = definePlugin({
 
         ctx.logger.info("KB: indexed issue", { issueId, identifier: issue.identifier, contentLen: content.length });
 
+        // ── Export issue output as markdown file in project workspace ──
+        if (issue.projectId) {
+          try {
+            const fs = await import("node:fs/promises");
+            const path = await import("node:path");
+            const projectDir = `/paperclip/.paperclip/instances/default/projects/${companyId}/${issue.projectId}/_default`;
+            const deliverablesDir = path.resolve(projectDir, "deliverables");
+            await fs.mkdir(deliverablesDir, { recursive: true });
+
+            // Slugify title for filename
+            const slug = ((issue.title as string) || "untitled")
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, "-")
+              .replace(/^-+|-+$/g, "")
+              .substring(0, 60);
+            const filename = `${issue.identifier || issueId}-${slug}.md`;
+            const filepath = path.resolve(deliverablesDir, filename);
+
+            // Build markdown with frontmatter
+            const completedAt = new Date().toISOString().split("T")[0];
+            const fileContent = [
+              "---",
+              `identifier: ${issue.identifier || issueId}`,
+              `title: ${(issue.title as string || "").replace(/"/g, "\\\"")}`,
+              agentName ? `agent: ${agentName}` : "",
+              `completed: ${completedAt}`,
+              `source: paperclip-agent-memory`,
+              "---",
+              "",
+              `# ${issue.identifier || issueId}: ${issue.title || "Untitled"}`,
+              "",
+              issue.description ? `## Task\n${issue.description}\n` : "",
+              "## Output",
+              "",
+              ...agentComments.map((c) => c.body as string),
+            ].filter(Boolean).join("\n");
+
+            await fs.writeFile(filepath, fileContent, "utf-8");
+            ctx.logger.info(`KB: exported deliverable to ${filepath}`);
+          } catch (err) {
+            ctx.logger.warn(`KB: failed to export deliverable file: ${err}`);
+          }
+        }
+
         // ── Auto-generate executive brief for synthesis issues ──
         if (cfg.kbAutoBreif && issue.parentId) {
           // This is a subtask — check if all siblings are done (parent synthesis)

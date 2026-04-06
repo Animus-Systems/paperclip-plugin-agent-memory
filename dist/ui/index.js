@@ -244,7 +244,7 @@ function MemoryAgentTab({ context }) {
       ] })
     ] }, mem.id || i);
   };
-  const tabStyle2 = (active) => ({
+  const tabStyle = (active) => ({
     padding: "6px 14px",
     borderRadius: 6,
     fontSize: "0.8rem",
@@ -266,12 +266,12 @@ function MemoryAgentTab({ context }) {
   };
   return /* @__PURE__ */ jsxs("div", { style: { padding: "1rem", display: "flex", flexDirection: "column", gap: "1rem" }, children: [
     /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 4 }, children: [
-      /* @__PURE__ */ jsxs("button", { style: tabStyle2(tab === "knowledge"), onClick: () => setTab("knowledge"), children: [
+      /* @__PURE__ */ jsxs("button", { style: tabStyle(tab === "knowledge"), onClick: () => setTab("knowledge"), children: [
         "Knowledge ",
         memories?.length ? `(${memories.length})` : ""
       ] }),
-      /* @__PURE__ */ jsx("button", { style: tabStyle2(tab === "search"), onClick: () => setTab("search"), children: "Search" }),
-      /* @__PURE__ */ jsx("button", { style: tabStyle2(tab === "add"), onClick: () => setTab("add"), children: "Add" })
+      /* @__PURE__ */ jsx("button", { style: tabStyle(tab === "search"), onClick: () => setTab("search"), children: "Search" }),
+      /* @__PURE__ */ jsx("button", { style: tabStyle(tab === "add"), onClick: () => setTab("add"), children: "Add" })
     ] }),
     tab === "knowledge" && /* @__PURE__ */ jsxs("div", { children: [
       isLoading && /* @__PURE__ */ jsx("div", { style: muted, children: "Loading..." }),
@@ -756,41 +756,391 @@ function KBSidebarLink({ context }) {
     }
   );
 }
-var pageBg = { padding: "1.5rem 2rem", maxWidth: 960, margin: "0 auto" };
-var tabBar = { display: "flex", gap: 2, borderBottom: "1px solid rgba(255,255,255,0.08)", marginBottom: 16 };
-var tabStyle = (active) => ({
-  padding: "8px 16px",
-  fontSize: "0.85rem",
-  fontWeight: 500,
-  cursor: "pointer",
-  borderBottom: active ? "2px solid rgb(99,102,241)" : "2px solid transparent",
-  color: active ? "#fff" : "rgba(255,255,255,0.5)",
-  background: "none",
-  border: "none",
-  borderBottomStyle: "solid"
-});
-var cardStyle = { background: "rgba(255,255,255,0.03)", borderRadius: 8, border: "1px solid rgba(255,255,255,0.06)", marginBottom: 12 };
-var rowStyle = { padding: "10px 14px", borderBottom: "1px solid rgba(255,255,255,0.04)", fontSize: "0.85rem" };
-var badgeStyle = (color) => ({ display: "inline-block", padding: "1px 6px", borderRadius: 3, fontSize: "0.7rem", fontWeight: 500, background: `${color}22`, color, marginRight: 4 });
-var inputCss = { padding: "8px 12px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.06)", color: "#fff", fontSize: "0.85rem", outline: "none", width: "100%" };
-var btnPrimary = { padding: "8px 18px", borderRadius: 6, border: "none", background: "rgba(99,102,241,0.3)", color: "rgb(165,168,255)", fontSize: "0.85rem", fontWeight: 500, cursor: "pointer" };
-var mutedSm = { fontSize: "0.75rem", color: "rgba(255,255,255,0.4)" };
-var SOURCE_COLORS = {
-  issue_completion: "rgb(34,197,94)",
-  document: "rgb(59,130,246)",
-  executive_brief: "rgb(168,85,247)",
-  unknown: "rgb(161,161,170)"
+var KB = {
+  radius: 14,
+  radiusSm: 10,
+  radiusXs: 8,
+  gap: 16,
+  // Surfaces
+  bg: "rgba(255,255,255,0.02)",
+  cardBg: "rgba(255,255,255,0.04)",
+  cardBgHover: "rgba(255,255,255,0.06)",
+  cardBorder: "rgba(255,255,255,0.06)",
+  cardBorderHover: "rgba(255,255,255,0.10)",
+  inputBg: "rgba(255,255,255,0.05)",
+  inputBorder: "rgba(255,255,255,0.10)",
+  inputFocus: "rgba(99,102,241,0.4)",
+  // Text
+  textPrimary: "#fff",
+  textSecondary: "rgba(255,255,255,0.65)",
+  textTertiary: "rgba(255,255,255,0.40)",
+  textQuaternary: "rgba(255,255,255,0.25)",
+  // Accent
+  accent: "rgb(99,102,241)",
+  accentBg: "rgba(99,102,241,0.12)",
+  accentText: "rgb(165,168,255)",
+  // Status
+  green: "rgb(34,197,94)",
+  greenBg: "rgba(34,197,94,0.10)",
+  greenText: "rgb(134,239,172)",
+  blue: "rgb(59,130,246)",
+  blueBg: "rgba(59,130,246,0.10)",
+  blueText: "rgb(147,197,253)",
+  purple: "rgb(168,85,247)",
+  purpleBg: "rgba(168,85,247,0.10)",
+  purpleText: "rgb(196,167,255)",
+  red: "rgb(239,68,68)",
+  redBg: "rgba(239,68,68,0.10)",
+  redText: "rgb(252,165,165)",
+  amber: "rgb(245,158,11)",
+  amberBg: "rgba(245,158,11,0.10)",
+  amberText: "rgb(252,211,77)",
+  zinc: "rgb(161,161,170)",
+  zincBg: "rgba(161,161,170,0.10)"
 };
+var SOURCE_THEME = {
+  issue_completion: { bg: KB.greenBg, text: KB.greenText, label: "Issue", icon: "checkmark.circle.fill" },
+  document: { bg: KB.blueBg, text: KB.blueText, label: "Document", icon: "doc.fill" },
+  executive_brief: { bg: KB.purpleBg, text: KB.purpleText, label: "Brief", icon: "text.document.fill" },
+  manual_upload: { bg: KB.blueBg, text: KB.blueText, label: "Upload", icon: "arrow.up.doc.fill" },
+  unknown: { bg: KB.zincBg, text: KB.zinc, label: "Other", icon: "questionmark.circle" }
+};
+function KBCard({ children, style, onClick, hoverable = false }) {
+  const [hovered, setHovered] = useState(false);
+  return /* @__PURE__ */ jsx(
+    "div",
+    {
+      onClick,
+      onMouseEnter: hoverable ? () => setHovered(true) : void 0,
+      onMouseLeave: hoverable ? () => setHovered(false) : void 0,
+      style: {
+        background: hovered ? KB.cardBgHover : KB.cardBg,
+        borderRadius: KB.radius,
+        border: `1px solid ${hovered ? KB.cardBorderHover : KB.cardBorder}`,
+        transition: "all 0.2s ease",
+        cursor: onClick ? "pointer" : void 0,
+        ...style
+      },
+      children
+    }
+  );
+}
+function KBInput({ value, onChange, onKeyDown, placeholder, style, large, mono }) {
+  const [focused, setFocused] = useState(false);
+  return /* @__PURE__ */ jsx(
+    "input",
+    {
+      type: "text",
+      value,
+      onChange: (e) => onChange(e.target.value),
+      onKeyDown,
+      onFocus: () => setFocused(true),
+      onBlur: () => setFocused(false),
+      placeholder,
+      style: {
+        padding: large ? "12px 16px" : "9px 13px",
+        borderRadius: KB.radiusSm,
+        border: `1px solid ${focused ? KB.inputFocus : KB.inputBorder}`,
+        background: KB.inputBg,
+        color: KB.textPrimary,
+        fontSize: large ? "1rem" : "0.875rem",
+        fontFamily: mono ? "ui-monospace, 'SF Mono', monospace" : "inherit",
+        outline: "none",
+        width: "100%",
+        transition: "border-color 0.2s ease, box-shadow 0.2s ease",
+        boxShadow: focused ? `0 0 0 3px ${KB.accentBg}` : "none",
+        ...style
+      }
+    }
+  );
+}
+function KBTextarea({ value, onChange, placeholder, rows = 4, mono, style }) {
+  const [focused, setFocused] = useState(false);
+  return /* @__PURE__ */ jsx(
+    "textarea",
+    {
+      value,
+      onChange: (e) => onChange(e.target.value),
+      onFocus: () => setFocused(true),
+      onBlur: () => setFocused(false),
+      placeholder,
+      rows,
+      style: {
+        padding: "10px 14px",
+        borderRadius: KB.radiusSm,
+        border: `1px solid ${focused ? KB.inputFocus : KB.inputBorder}`,
+        background: KB.inputBg,
+        color: KB.textPrimary,
+        fontSize: "0.875rem",
+        fontFamily: mono ? "ui-monospace, 'SF Mono', monospace" : "inherit",
+        outline: "none",
+        width: "100%",
+        resize: "vertical",
+        transition: "border-color 0.2s ease, box-shadow 0.2s ease",
+        boxShadow: focused ? `0 0 0 3px ${KB.accentBg}` : "none",
+        lineHeight: 1.5,
+        ...style
+      }
+    }
+  );
+}
+function KBButton({ children, onClick, disabled, variant = "primary", size = "md", style }) {
+  const [hovered, setHovered] = useState(false);
+  const base = {
+    padding: size === "sm" ? "6px 14px" : "9px 20px",
+    borderRadius: KB.radiusXs,
+    border: "none",
+    fontSize: size === "sm" ? "0.8rem" : "0.875rem",
+    fontWeight: 500,
+    cursor: disabled ? "default" : "pointer",
+    opacity: disabled ? 0.4 : 1,
+    transition: "all 0.15s ease",
+    whiteSpace: "nowrap",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
+    fontFamily: "inherit"
+  };
+  const variants = {
+    primary: {
+      background: hovered && !disabled ? "rgba(99,102,241,0.35)" : "rgba(99,102,241,0.22)",
+      color: KB.accentText
+    },
+    secondary: {
+      background: hovered && !disabled ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.04)",
+      color: KB.textSecondary,
+      border: `1px solid ${KB.cardBorder}`
+    },
+    ghost: {
+      background: hovered && !disabled ? "rgba(255,255,255,0.06)" : "transparent",
+      color: KB.textTertiary
+    }
+  };
+  return /* @__PURE__ */ jsx(
+    "button",
+    {
+      onClick,
+      disabled,
+      onMouseEnter: () => setHovered(true),
+      onMouseLeave: () => setHovered(false),
+      style: { ...base, ...variants[variant], ...style },
+      children
+    }
+  );
+}
+function KBBadge({ children, bg, color }) {
+  return /* @__PURE__ */ jsx("span", { style: {
+    display: "inline-flex",
+    alignItems: "center",
+    padding: "2px 8px",
+    borderRadius: 6,
+    fontSize: "0.7rem",
+    fontWeight: 600,
+    background: bg,
+    color,
+    letterSpacing: "0.02em",
+    textTransform: "uppercase"
+  }, children });
+}
+function KBMetricCard({ value, label, icon }) {
+  return /* @__PURE__ */ jsxs(KBCard, { style: { padding: "20px 16px", textAlign: "center" }, children: [
+    /* @__PURE__ */ jsx("div", { style: { marginBottom: 8, opacity: 0.5 }, children: icon }),
+    /* @__PURE__ */ jsx("div", { style: {
+      fontSize: "1.75rem",
+      fontWeight: 700,
+      color: KB.textPrimary,
+      letterSpacing: "-0.02em",
+      lineHeight: 1
+    }, children: value }),
+    /* @__PURE__ */ jsx("div", { style: {
+      fontSize: "0.75rem",
+      color: KB.textTertiary,
+      marginTop: 6,
+      fontWeight: 500,
+      letterSpacing: "0.02em"
+    }, children: label })
+  ] });
+}
+function KBToast({ message, type = "info" }) {
+  const colors = {
+    success: { bg: KB.greenBg, border: "rgba(34,197,94,0.2)", text: KB.greenText, icon: "\u2713" },
+    error: { bg: KB.redBg, border: "rgba(239,68,68,0.2)", text: KB.redText, icon: "\u2717" },
+    info: { bg: KB.accentBg, border: "rgba(99,102,241,0.2)", text: KB.accentText, icon: "\u2139" }
+  };
+  const c = colors[type];
+  return /* @__PURE__ */ jsxs("div", { style: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    padding: "10px 16px",
+    borderRadius: KB.radiusSm,
+    background: c.bg,
+    border: `1px solid ${c.border}`,
+    fontSize: "0.85rem",
+    color: c.text,
+    animation: "fadeIn 0.2s ease"
+  }, children: [
+    /* @__PURE__ */ jsx("span", { style: { fontSize: "0.9rem", fontWeight: 700 }, children: c.icon }),
+    message
+  ] });
+}
+function KBEmptyState({ icon, title, description }) {
+  return /* @__PURE__ */ jsxs("div", { style: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "48px 24px",
+    textAlign: "center"
+  }, children: [
+    /* @__PURE__ */ jsx("div", { style: { marginBottom: 16, opacity: 0.3 }, children: icon }),
+    /* @__PURE__ */ jsx("div", { style: { fontSize: "1rem", fontWeight: 600, color: KB.textSecondary, marginBottom: 6 }, children: title }),
+    /* @__PURE__ */ jsx("div", { style: { fontSize: "0.85rem", color: KB.textTertiary, maxWidth: 360, lineHeight: 1.5 }, children: description })
+  ] });
+}
+function KBSectionHeader({ title, count, right }) {
+  return /* @__PURE__ */ jsxs("div", { style: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12,
+    marginTop: 24
+  }, children: [
+    /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8 }, children: [
+      /* @__PURE__ */ jsx("span", { style: { fontSize: "0.8rem", fontWeight: 600, color: KB.textSecondary, letterSpacing: "0.03em" }, children: title }),
+      count != null && /* @__PURE__ */ jsx("span", { style: {
+        fontSize: "0.7rem",
+        fontWeight: 600,
+        color: KB.textTertiary,
+        background: "rgba(255,255,255,0.06)",
+        padding: "1px 7px",
+        borderRadius: 10
+      }, children: count })
+    ] }),
+    right
+  ] });
+}
+var Icons = {
+  search: (size = 18) => /* @__PURE__ */ jsxs("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", children: [
+    /* @__PURE__ */ jsx("circle", { cx: "11", cy: "11", r: "8" }),
+    /* @__PURE__ */ jsx("path", { d: "m21 21-4.35-4.35" })
+  ] }),
+  doc: (size = 18) => /* @__PURE__ */ jsxs("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", children: [
+    /* @__PURE__ */ jsx("path", { d: "M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" }),
+    /* @__PURE__ */ jsx("polyline", { points: "14 2 14 8 20 8" })
+  ] }),
+  folder: (size = 18) => /* @__PURE__ */ jsx("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", children: /* @__PURE__ */ jsx("path", { d: "M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" }) }),
+  brief: (size = 18) => /* @__PURE__ */ jsxs("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", children: [
+    /* @__PURE__ */ jsx("path", { d: "M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" }),
+    /* @__PURE__ */ jsx("polyline", { points: "14 2 14 8 20 8" }),
+    /* @__PURE__ */ jsx("line", { x1: "16", y1: "13", x2: "8", y2: "13" }),
+    /* @__PURE__ */ jsx("line", { x1: "16", y1: "17", x2: "8", y2: "17" }),
+    /* @__PURE__ */ jsx("line", { x1: "10", y1: "9", x2: "8", y2: "9" })
+  ] }),
+  chart: (size = 18) => /* @__PURE__ */ jsxs("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", children: [
+    /* @__PURE__ */ jsx("line", { x1: "18", y1: "20", x2: "18", y2: "10" }),
+    /* @__PURE__ */ jsx("line", { x1: "12", y1: "20", x2: "12", y2: "4" }),
+    /* @__PURE__ */ jsx("line", { x1: "6", y1: "20", x2: "6", y2: "14" })
+  ] }),
+  check: (size = 18) => /* @__PURE__ */ jsxs("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", children: [
+    /* @__PURE__ */ jsx("path", { d: "M22 11.08V12a10 10 0 1 1-5.93-9.14" }),
+    /* @__PURE__ */ jsx("polyline", { points: "22 4 12 14.01 9 11.01" })
+  ] }),
+  upload: (size = 18) => /* @__PURE__ */ jsxs("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", children: [
+    /* @__PURE__ */ jsx("path", { d: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" }),
+    /* @__PURE__ */ jsx("polyline", { points: "17 8 12 3 7 8" }),
+    /* @__PURE__ */ jsx("line", { x1: "12", y1: "3", x2: "12", y2: "15" })
+  ] }),
+  chevron: (size = 14) => /* @__PURE__ */ jsx("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2.5", strokeLinecap: "round", strokeLinejoin: "round", children: /* @__PURE__ */ jsx("polyline", { points: "9 18 15 12 9 6" }) }),
+  sparkle: (size = 18) => /* @__PURE__ */ jsx("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", children: /* @__PURE__ */ jsx("path", { d: "m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" }) }),
+  refresh: (size = 14) => /* @__PURE__ */ jsxs("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", children: [
+    /* @__PURE__ */ jsx("path", { d: "M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" }),
+    /* @__PURE__ */ jsx("path", { d: "M3 3v5h5" }),
+    /* @__PURE__ */ jsx("path", { d: "M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" }),
+    /* @__PURE__ */ jsx("path", { d: "M16 16h5v5" })
+  ] })
+};
+function parseKBContent(raw) {
+  const tags = {};
+  const tagRegex = /\[(\w+(?:_\w+)*): ([^\]]+)\]/g;
+  let m;
+  while ((m = tagRegex.exec(raw)) !== null) {
+    tags[m[1]] = m[2];
+  }
+  const content = raw.replace(/\[[\w_]+: [^\]]+\]\s*/g, "").trim();
+  return {
+    title: tags["title"] ?? content.substring(0, 60) + (content.length > 60 ? "..." : ""),
+    source: tags["kb_source"] ?? tags["source"] ?? tags["type"] ?? "unknown",
+    agent: tags["agent"] ?? null,
+    issue: tags["issue"] ?? null,
+    content,
+    type: tags["type"] ?? null
+  };
+}
+var TABS = [
+  { key: "search", label: "Search", icon: Icons.search },
+  { key: "documents", label: "Documents", icon: Icons.doc },
+  { key: "folders", label: "Folders", icon: Icons.folder },
+  { key: "briefs", label: "Briefs", icon: Icons.brief },
+  { key: "stats", label: "Overview", icon: Icons.chart }
+];
 function KBPage({ context }) {
   const [tab, setTab] = useState("search");
-  return /* @__PURE__ */ jsxs("div", { style: pageBg, children: [
-    /* @__PURE__ */ jsx("h2", { style: { fontSize: "1.2rem", fontWeight: 700, color: "#fff", marginBottom: 12 }, children: "Knowledge Base" }),
-    /* @__PURE__ */ jsx("div", { style: tabBar, children: ["search", "documents", "folders", "briefs", "stats"].map((t) => /* @__PURE__ */ jsx("button", { style: tabStyle(tab === t), onClick: () => setTab(t), children: t.charAt(0).toUpperCase() + t.slice(1) }, t)) }),
-    tab === "search" && /* @__PURE__ */ jsx(KBSearchTab, { companyId: context.companyId }),
-    tab === "documents" && /* @__PURE__ */ jsx(KBDocumentsTab, { companyId: context.companyId }),
-    tab === "folders" && /* @__PURE__ */ jsx(KBFoldersTab, { companyId: context.companyId }),
-    tab === "briefs" && /* @__PURE__ */ jsx(KBBriefsTab, { companyId: context.companyId }),
-    tab === "stats" && /* @__PURE__ */ jsx(KBStatsTab, { companyId: context.companyId })
+  return /* @__PURE__ */ jsxs("div", { style: { padding: "24px 32px", maxWidth: 1e3, margin: "0 auto" }, children: [
+    /* @__PURE__ */ jsxs("div", { style: { marginBottom: 24 }, children: [
+      /* @__PURE__ */ jsx("h1", { style: {
+        fontSize: "1.5rem",
+        fontWeight: 700,
+        color: KB.textPrimary,
+        letterSpacing: "-0.02em",
+        margin: 0
+      }, children: "Knowledge Base" }),
+      /* @__PURE__ */ jsx("p", { style: { fontSize: "0.85rem", color: KB.textTertiary, margin: "4px 0 0" }, children: "Search, manage, and explore your team's collective knowledge." })
+    ] }),
+    /* @__PURE__ */ jsx("div", { style: {
+      display: "inline-flex",
+      gap: 2,
+      padding: 3,
+      background: "rgba(255,255,255,0.04)",
+      borderRadius: KB.radiusSm,
+      marginBottom: 28,
+      border: `1px solid ${KB.cardBorder}`
+    }, children: TABS.map((t) => {
+      const active = tab === t.key;
+      return /* @__PURE__ */ jsxs(
+        "button",
+        {
+          onClick: () => setTab(t.key),
+          style: {
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            padding: "7px 16px",
+            borderRadius: KB.radiusXs,
+            border: "none",
+            cursor: "pointer",
+            background: active ? "rgba(255,255,255,0.10)" : "transparent",
+            color: active ? KB.textPrimary : KB.textTertiary,
+            fontSize: "0.82rem",
+            fontWeight: 500,
+            transition: "all 0.15s ease",
+            fontFamily: "inherit"
+          },
+          children: [
+            /* @__PURE__ */ jsx("span", { style: { opacity: active ? 0.9 : 0.5, display: "flex" }, children: t.icon(14) }),
+            t.label
+          ]
+        },
+        t.key
+      );
+    }) }),
+    /* @__PURE__ */ jsxs("div", { children: [
+      tab === "search" && /* @__PURE__ */ jsx(KBSearchTab, { companyId: context.companyId }),
+      tab === "documents" && /* @__PURE__ */ jsx(KBDocumentsTab, { companyId: context.companyId }),
+      tab === "folders" && /* @__PURE__ */ jsx(KBFoldersTab, { companyId: context.companyId }),
+      tab === "briefs" && /* @__PURE__ */ jsx(KBBriefsTab, { companyId: context.companyId }),
+      tab === "stats" && /* @__PURE__ */ jsx(KBStatsTab, { companyId: context.companyId })
+    ] })
   ] });
 }
 function KBSearchTab({ companyId }) {
@@ -812,55 +1162,132 @@ function KBSearchTab({ companyId }) {
     }
   }, [query, companyId, searchAction]);
   return /* @__PURE__ */ jsxs("div", { children: [
-    /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8, marginBottom: 16 }, children: [
-      /* @__PURE__ */ jsx(
-        "input",
-        {
-          style: { ...inputCss, flex: 1, fontSize: "1rem", padding: "10px 14px" },
-          value: query,
-          onChange: (e) => setQuery(e.target.value),
-          onKeyDown: (e) => e.key === "Enter" && doSearch(),
-          placeholder: "Search completed work, documents, briefs..."
-        }
-      ),
-      /* @__PURE__ */ jsx("button", { style: btnPrimary, onClick: doSearch, disabled: searching, children: searching ? "Searching..." : "Search" })
-    ] }),
-    results !== null && results.length === 0 && /* @__PURE__ */ jsx("div", { style: { ...mutedSm, padding: 20, textAlign: "center" }, children: "No results found." }),
-    results && results.map((r, i) => {
-      const titleMatch = r.content.match(/\[title: ([^\]]+)\]/);
-      const sourceMatch = r.content.match(/\[kb_source: ([^\]]+)\]/);
-      const agentMatch = r.content.match(/\[agent: ([^\]]+)\]/);
-      const issueMatch = r.content.match(/\[issue: ([^\]]+)\]/);
-      const cleanContent = r.content.replace(/\[[\w_]+: [^\]]+\]/g, "").trim();
-      const source = sourceMatch?.[1] ?? "unknown";
-      const isExpanded = expanded === (r.id || String(i));
-      return /* @__PURE__ */ jsxs("div", { style: cardStyle, children: [
-        /* @__PURE__ */ jsxs(
-          "div",
+    /* @__PURE__ */ jsxs("div", { style: {
+      display: "flex",
+      gap: 10,
+      marginBottom: 24,
+      alignItems: "center"
+    }, children: [
+      /* @__PURE__ */ jsxs("div", { style: { flex: 1, position: "relative" }, children: [
+        /* @__PURE__ */ jsx("span", { style: {
+          position: "absolute",
+          left: 14,
+          top: "50%",
+          transform: "translateY(-50%)",
+          color: KB.textTertiary,
+          display: "flex",
+          pointerEvents: "none"
+        }, children: Icons.search(16) }),
+        /* @__PURE__ */ jsx(
+          KBInput,
           {
-            style: { ...rowStyle, cursor: "pointer", borderBottom: isExpanded ? "1px solid rgba(255,255,255,0.06)" : "none" },
-            onClick: () => setExpanded(isExpanded ? null : r.id || String(i)),
-            children: [
-              /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }, children: [
-                /* @__PURE__ */ jsx("span", { style: badgeStyle(SOURCE_COLORS[source] ?? SOURCE_COLORS.unknown), children: source.replace("_", " ") }),
-                /* @__PURE__ */ jsx("span", { style: { fontWeight: 600, color: "#fff" }, children: titleMatch?.[1] ?? "Untitled" }),
-                issueMatch && /* @__PURE__ */ jsx("span", { style: mutedSm, children: issueMatch[1] }),
-                agentMatch && /* @__PURE__ */ jsxs("span", { style: mutedSm, children: [
-                  "by ",
-                  agentMatch[1]
-                ] }),
-                /* @__PURE__ */ jsx("span", { style: { ...mutedSm, marginLeft: "auto" }, children: isExpanded ? "\u25BE" : "\u25B8" })
-              ] }),
-              !isExpanded && /* @__PURE__ */ jsxs("div", { style: { ...mutedSm, lineHeight: 1.4 }, children: [
-                cleanContent.substring(0, 150),
-                "..."
-              ] })
-            ]
+            value: query,
+            onChange: setQuery,
+            onKeyDown: (e) => e.key === "Enter" && doSearch(),
+            placeholder: "Search completed work, documents, briefs...",
+            large: true,
+            style: { paddingLeft: 40 }
           }
-        ),
-        isExpanded && /* @__PURE__ */ jsx("div", { style: { padding: "12px 14px", fontSize: "0.85rem", color: "rgba(255,255,255,0.8)", lineHeight: 1.6, whiteSpace: "pre-wrap", maxHeight: 400, overflowY: "auto" }, children: cleanContent })
-      ] }, r.id || i);
-    })
+        )
+      ] }),
+      /* @__PURE__ */ jsx(KBButton, { onClick: doSearch, disabled: searching || !query.trim(), children: searching ? "Searching..." : "Search" })
+    ] }),
+    results === null && /* @__PURE__ */ jsx(
+      KBEmptyState,
+      {
+        icon: Icons.search(40),
+        title: "Search your knowledge",
+        description: "Find context from completed tasks, uploaded documents, and executive briefs. Results are ranked by relevance."
+      }
+    ),
+    results !== null && results.length === 0 && /* @__PURE__ */ jsx(
+      KBEmptyState,
+      {
+        icon: Icons.search(40),
+        title: "No results found",
+        description: "Try different keywords or a broader search query."
+      }
+    ),
+    results && results.length > 0 && /* @__PURE__ */ jsxs("div", { style: { display: "flex", flexDirection: "column", gap: 8 }, children: [
+      /* @__PURE__ */ jsxs("span", { style: { fontSize: "0.75rem", color: KB.textTertiary, fontWeight: 500, marginBottom: 4 }, children: [
+        results.length,
+        " result",
+        results.length !== 1 ? "s" : ""
+      ] }),
+      results.map((r, i) => {
+        const parsed = parseKBContent(r.content);
+        const source = SOURCE_THEME[parsed.source] ?? SOURCE_THEME.unknown;
+        const key = r.id || String(i);
+        const isExpanded = expanded === key;
+        const relevance = r.score != null ? Math.round(r.score * 100) : null;
+        return /* @__PURE__ */ jsx(KBCard, { hoverable: true, onClick: () => setExpanded(isExpanded ? null : key), children: /* @__PURE__ */ jsxs("div", { style: { padding: "14px 18px" }, children: [
+          /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10, marginBottom: isExpanded ? 12 : 6 }, children: [
+            /* @__PURE__ */ jsx(KBBadge, { bg: source.bg, color: source.text, children: source.label }),
+            /* @__PURE__ */ jsx("span", { style: {
+              fontSize: "0.92rem",
+              fontWeight: 600,
+              color: KB.textPrimary,
+              flex: 1,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap"
+            }, children: parsed.title }),
+            /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }, children: [
+              parsed.issue && /* @__PURE__ */ jsx("span", { style: {
+                fontSize: "0.75rem",
+                color: KB.textTertiary,
+                fontWeight: 500,
+                background: "rgba(255,255,255,0.05)",
+                padding: "2px 8px",
+                borderRadius: 6,
+                fontFamily: "ui-monospace, monospace"
+              }, children: parsed.issue }),
+              relevance != null && /* @__PURE__ */ jsxs("span", { style: { fontSize: "0.7rem", color: KB.textQuaternary, fontWeight: 500 }, children: [
+                relevance,
+                "%"
+              ] }),
+              /* @__PURE__ */ jsx("span", { style: {
+                display: "flex",
+                transition: "transform 0.2s ease",
+                transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)",
+                color: KB.textQuaternary
+              }, children: Icons.chevron() })
+            ] })
+          ] }),
+          parsed.agent && !isExpanded && /* @__PURE__ */ jsxs("span", { style: { fontSize: "0.75rem", color: KB.textTertiary }, children: [
+            "by ",
+            parsed.agent
+          ] }),
+          !isExpanded && /* @__PURE__ */ jsx("div", { style: {
+            fontSize: "0.835rem",
+            color: KB.textTertiary,
+            lineHeight: 1.5,
+            marginTop: 4,
+            display: "-webkit-box",
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: "vertical",
+            overflow: "hidden"
+          }, children: parsed.content.substring(0, 200) }),
+          isExpanded && /* @__PURE__ */ jsxs("div", { children: [
+            parsed.agent && /* @__PURE__ */ jsxs("div", { style: { fontSize: "0.8rem", color: KB.textTertiary, marginBottom: 12 }, children: [
+              "Generated by ",
+              /* @__PURE__ */ jsx("span", { style: { color: KB.textSecondary, fontWeight: 500 }, children: parsed.agent })
+            ] }),
+            /* @__PURE__ */ jsx("div", { style: {
+              fontSize: "0.875rem",
+              color: KB.textSecondary,
+              lineHeight: 1.7,
+              whiteSpace: "pre-wrap",
+              maxHeight: 400,
+              overflowY: "auto",
+              padding: "14px 16px",
+              borderRadius: KB.radiusSm,
+              background: "rgba(0,0,0,0.15)"
+            }, children: parsed.content })
+          ] })
+        ] }) }, key);
+      })
+    ] })
   ] });
 }
 function KBDocumentsTab({ companyId }) {
@@ -868,132 +1295,287 @@ function KBDocumentsTab({ companyId }) {
   const [uploadName, setUploadName] = useState("");
   const [uploadContent, setUploadContent] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [toast, setToast] = useState(null);
   const uploadAction = usePluginAction("kb:upload-document");
   const handleUpload = useCallback(async () => {
     if (!uploadName.trim() || !uploadContent.trim()) return;
     setUploading(true);
+    setToast(null);
     try {
       await uploadAction({ companyId, name: uploadName.trim(), content: uploadContent.trim() });
       setUploadName("");
       setUploadContent("");
+      setToast({ msg: "Document uploaded successfully", type: "success" });
     } catch {
+      setToast({ msg: "Failed to upload document", type: "error" });
     }
     setUploading(false);
+    setTimeout(() => setToast(null), 4e3);
   }, [uploadName, uploadContent, companyId, uploadAction]);
+  const docList = docs ?? [];
   return /* @__PURE__ */ jsxs("div", { children: [
-    /* @__PURE__ */ jsxs("div", { style: { ...cardStyle, padding: 14 }, children: [
-      /* @__PURE__ */ jsx("div", { style: { fontSize: "0.8rem", fontWeight: 600, color: "rgba(255,255,255,0.6)", marginBottom: 8 }, children: "Upload Document" }),
-      /* @__PURE__ */ jsx("input", { style: { ...inputCss, marginBottom: 8 }, value: uploadName, onChange: (e) => setUploadName(e.target.value), placeholder: "Document name" }),
-      /* @__PURE__ */ jsx("textarea", { style: { ...inputCss, minHeight: 80, resize: "vertical", fontFamily: "monospace", fontSize: "0.8rem" }, value: uploadContent, onChange: (e) => setUploadContent(e.target.value), placeholder: "Paste document content here..." }),
-      /* @__PURE__ */ jsx("div", { style: { marginTop: 8 }, children: /* @__PURE__ */ jsx("button", { style: btnPrimary, onClick: handleUpload, disabled: uploading || !uploadName.trim() || !uploadContent.trim(), children: uploading ? "Uploading..." : "Upload" }) })
+    /* @__PURE__ */ jsxs(KBCard, { style: { padding: "20px 22px", marginBottom: 8 }, children: [
+      /* @__PURE__ */ jsxs("div", { style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        marginBottom: 16
+      }, children: [
+        /* @__PURE__ */ jsx("span", { style: { color: KB.textTertiary, display: "flex" }, children: Icons.upload(16) }),
+        /* @__PURE__ */ jsx("span", { style: { fontSize: "0.875rem", fontWeight: 600, color: KB.textSecondary }, children: "Upload Document" })
+      ] }),
+      /* @__PURE__ */ jsxs("div", { style: { display: "flex", flexDirection: "column", gap: 10 }, children: [
+        /* @__PURE__ */ jsx(
+          KBInput,
+          {
+            value: uploadName,
+            onChange: setUploadName,
+            placeholder: "Document title"
+          }
+        ),
+        /* @__PURE__ */ jsx(
+          KBTextarea,
+          {
+            value: uploadContent,
+            onChange: setUploadContent,
+            placeholder: "Paste document content...",
+            rows: 4,
+            mono: true
+          }
+        ),
+        /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 12 }, children: [
+          /* @__PURE__ */ jsx(
+            KBButton,
+            {
+              onClick: handleUpload,
+              disabled: uploading || !uploadName.trim() || !uploadContent.trim(),
+              children: uploading ? "Uploading..." : "Upload"
+            }
+          ),
+          toast && /* @__PURE__ */ jsx(KBToast, { message: toast.msg, type: toast.type })
+        ] })
+      ] })
     ] }),
-    /* @__PURE__ */ jsxs("div", { style: { fontSize: "0.8rem", fontWeight: 600, color: "rgba(255,255,255,0.6)", marginTop: 16, marginBottom: 8 }, children: [
-      (docs ?? []).length,
-      " documents indexed"
-    ] }),
-    (docs ?? []).map((d) => /* @__PURE__ */ jsxs("div", { style: { ...rowStyle, display: "flex", alignItems: "center", gap: 8 }, children: [
-      /* @__PURE__ */ jsx("span", { style: badgeStyle(SOURCE_COLORS[d.source] ?? SOURCE_COLORS.unknown), children: d.source.replace("_", " ") }),
-      /* @__PURE__ */ jsx("span", { style: { fontWeight: 500, color: "#fff", flex: 1 }, children: d.title }),
-      d.issue && /* @__PURE__ */ jsx("span", { style: mutedSm, children: d.issue }),
-      d.agent && /* @__PURE__ */ jsx("span", { style: mutedSm, children: d.agent })
-    ] }, d.id))
+    /* @__PURE__ */ jsx(KBSectionHeader, { title: "Documents", count: docList.length }),
+    docList.length === 0 ? /* @__PURE__ */ jsx(
+      KBEmptyState,
+      {
+        icon: Icons.doc(40),
+        title: "No documents yet",
+        description: "Upload a document above or enable auto-indexing to capture completed issue output."
+      }
+    ) : /* @__PURE__ */ jsx("div", { style: { display: "flex", flexDirection: "column", gap: 6 }, children: docList.map((d) => {
+      const theme = SOURCE_THEME[d.source] ?? SOURCE_THEME.unknown;
+      return /* @__PURE__ */ jsx(KBCard, { hoverable: true, style: { padding: "12px 18px" }, children: /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10 }, children: [
+        /* @__PURE__ */ jsx(KBBadge, { bg: theme.bg, color: theme.text, children: theme.label }),
+        /* @__PURE__ */ jsx("span", { style: { fontSize: "0.875rem", fontWeight: 500, color: KB.textPrimary, flex: 1 }, children: d.title }),
+        /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8 }, children: [
+          d.issue && /* @__PURE__ */ jsx("span", { style: {
+            fontSize: "0.75rem",
+            color: KB.textTertiary,
+            fontFamily: "ui-monospace, monospace"
+          }, children: d.issue }),
+          d.agent && /* @__PURE__ */ jsx("span", { style: { fontSize: "0.75rem", color: KB.textQuaternary }, children: d.agent })
+        ] })
+      ] }) }, d.id);
+    }) })
   ] });
 }
 function KBFoldersTab({ companyId }) {
   const { data: info } = usePluginData("kb:indexed-folders", { companyId });
   const [newFolder, setNewFolder] = useState("");
   const [indexing, setIndexing] = useState(null);
+  const [toast, setToast] = useState(null);
   const indexAction = usePluginAction("kb:index-folder");
   const handleIndex = useCallback(async (path) => {
     setIndexing(path);
+    setToast(null);
     try {
       const res = await indexAction({ companyId, path, recursive: true });
-      alert(res.ok ? `Indexed ${res.indexed} new files (${res.unchanged} unchanged, ${res.skipped} skipped)` : `Error: ${res.error}`);
+      if (res.ok) {
+        setToast({ msg: `Indexed ${res.indexed} files (${res.unchanged} unchanged, ${res.skipped} skipped)`, type: "success" });
+        if (path === newFolder) setNewFolder("");
+      } else {
+        setToast({ msg: `Error: ${res.error}`, type: "error" });
+      }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : typeof err === "object" ? JSON.stringify(err) : String(err);
-      alert(`Failed: ${msg.includes("502") || msg.includes("timeout") ? "Timed out \u2014 the brief may still be generating. Check back shortly." : msg}`);
+      const msg = err instanceof Error ? err.message : String(err);
+      setToast({ msg: msg.includes("502") || msg.includes("timeout") ? "Timed out \u2014 indexing may still be running" : `Failed: ${msg}`, type: "error" });
     }
     setIndexing(null);
-  }, [companyId, indexAction]);
+    setTimeout(() => setToast(null), 6e3);
+  }, [companyId, indexAction, newFolder]);
   const folders = info?.watchFolders ?? [];
   return /* @__PURE__ */ jsxs("div", { children: [
-    /* @__PURE__ */ jsxs("div", { style: { ...cardStyle, padding: 14 }, children: [
-      /* @__PURE__ */ jsx("div", { style: { fontSize: "0.8rem", fontWeight: 600, color: "rgba(255,255,255,0.6)", marginBottom: 8 }, children: "Index a Folder" }),
-      /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8 }, children: [
-        /* @__PURE__ */ jsx("input", { style: { ...inputCss, flex: 1 }, value: newFolder, onChange: (e) => setNewFolder(e.target.value), placeholder: "/data/accounts/Animus-Systems-SL" }),
-        /* @__PURE__ */ jsx("button", { style: btnPrimary, onClick: () => {
-          if (newFolder.trim()) handleIndex(newFolder.trim());
-        }, disabled: !!indexing || !newFolder.trim(), children: indexing === newFolder ? "Indexing..." : "Index Now" })
-      ] })
+    /* @__PURE__ */ jsxs(KBCard, { style: { padding: "20px 22px", marginBottom: 8 }, children: [
+      /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }, children: [
+        /* @__PURE__ */ jsx("span", { style: { color: KB.textTertiary, display: "flex" }, children: Icons.folder(16) }),
+        /* @__PURE__ */ jsx("span", { style: { fontSize: "0.875rem", fontWeight: 600, color: KB.textSecondary }, children: "Index a Folder" })
+      ] }),
+      /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 10 }, children: [
+        /* @__PURE__ */ jsx(
+          KBInput,
+          {
+            value: newFolder,
+            onChange: setNewFolder,
+            placeholder: "/data/accounts/Animus-Systems-SL",
+            mono: true,
+            style: { flex: 1 }
+          }
+        ),
+        /* @__PURE__ */ jsx(
+          KBButton,
+          {
+            onClick: () => {
+              if (newFolder.trim()) handleIndex(newFolder.trim());
+            },
+            disabled: !!indexing || !newFolder.trim(),
+            children: indexing === newFolder ? "Indexing..." : "Index Now"
+          }
+        )
+      ] }),
+      toast && /* @__PURE__ */ jsx("div", { style: { marginTop: 12 }, children: /* @__PURE__ */ jsx(KBToast, { message: toast.msg, type: toast.type }) })
     ] }),
-    /* @__PURE__ */ jsxs("div", { style: { fontSize: "0.8rem", fontWeight: 600, color: "rgba(255,255,255,0.6)", marginTop: 16, marginBottom: 8 }, children: [
-      "Watch Folders (",
-      folders.length,
-      ") \xB7 ",
-      info?.hashCount ?? 0,
-      " files tracked"
-    ] }),
-    folders.length === 0 ? /* @__PURE__ */ jsx("div", { style: { ...mutedSm, padding: 12 }, children: "No watch folders configured. Add them in Agent Memory Settings." }) : folders.map((f) => /* @__PURE__ */ jsxs("div", { style: { ...rowStyle, display: "flex", alignItems: "center", gap: 8 }, children: [
-      /* @__PURE__ */ jsx("span", { style: { fontFamily: "monospace", fontSize: "0.8rem", color: "#fff", flex: 1 }, children: f }),
+    /* @__PURE__ */ jsx(
+      KBSectionHeader,
+      {
+        title: "Watch Folders",
+        count: folders.length,
+        right: /* @__PURE__ */ jsxs("span", { style: { fontSize: "0.75rem", color: KB.textQuaternary }, children: [
+          info?.hashCount ?? 0,
+          " files tracked"
+        ] })
+      }
+    ),
+    folders.length === 0 ? /* @__PURE__ */ jsx(
+      KBEmptyState,
+      {
+        icon: Icons.folder(40),
+        title: "No watch folders",
+        description: "Configure watch folders in Agent Memory Settings to auto-index files every 6 hours."
+      }
+    ) : /* @__PURE__ */ jsx("div", { style: { display: "flex", flexDirection: "column", gap: 6 }, children: folders.map((f) => /* @__PURE__ */ jsx(KBCard, { hoverable: true, style: { padding: "12px 18px" }, children: /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 12 }, children: [
+      /* @__PURE__ */ jsx("span", { style: { color: KB.textTertiary, display: "flex" }, children: Icons.folder(15) }),
+      /* @__PURE__ */ jsx("span", { style: {
+        fontFamily: "ui-monospace, 'SF Mono', monospace",
+        fontSize: "0.825rem",
+        color: KB.textPrimary,
+        flex: 1
+      }, children: f }),
       /* @__PURE__ */ jsx(
-        "button",
+        KBButton,
         {
-          style: { ...btnPrimary, padding: "4px 12px", fontSize: "0.75rem" },
+          size: "sm",
+          variant: "secondary",
           onClick: () => handleIndex(f),
           disabled: !!indexing,
-          children: indexing === f ? "..." : "Re-index"
+          children: indexing === f ? /* @__PURE__ */ jsxs("span", { style: { display: "flex", alignItems: "center", gap: 4 }, children: [
+            /* @__PURE__ */ jsx("span", { style: { display: "flex", animation: "spin 1s linear infinite" }, children: Icons.refresh() }),
+            "Indexing"
+          ] }) : /* @__PURE__ */ jsxs("span", { style: { display: "flex", alignItems: "center", gap: 4 }, children: [
+            Icons.refresh(),
+            " Re-index"
+          ] })
         }
       )
-    ] }, f))
+    ] }) }, f)) })
   ] });
 }
 function KBBriefsTab({ companyId }) {
-  const { data: briefs } = usePluginData("kb:list-briefs", { companyId });
+  const { data: briefs, refresh } = usePluginData("kb:list-briefs", { companyId });
   const [expanded, setExpanded] = useState(null);
   const [issueId, setIssueId] = useState("");
   const [generating, setGenerating] = useState(false);
+  const [toast, setToast] = useState(null);
   const briefAction = usePluginAction("kb:generate-brief");
   const handleGenerate = useCallback(async () => {
     if (!issueId.trim()) return;
     setGenerating(true);
+    setToast(null);
     try {
       const res = await briefAction({ companyId, issueId: issueId.trim() });
       if (res.ok) {
-        alert("Brief generated successfully!");
+        setToast({ msg: "Brief generated successfully", type: "success" });
         setIssueId("");
+        refresh();
       } else {
-        alert(`Error: ${res.error}`);
+        setToast({ msg: `Error: ${res.error}`, type: "error" });
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : typeof err === "object" ? JSON.stringify(err) : String(err);
-      alert(`Failed: ${msg.includes("502") || msg.includes("timeout") ? "Timed out \u2014 the brief may still be generating. Check back shortly." : msg}`);
+      const msg = err instanceof Error ? err.message : String(err);
+      setToast({ msg: msg.includes("502") || msg.includes("timeout") ? "Timed out \u2014 the brief may still be generating" : `Failed: ${msg}`, type: "error" });
     }
     setGenerating(false);
-  }, [issueId, companyId, briefAction]);
+    setTimeout(() => setToast(null), 6e3);
+  }, [issueId, companyId, briefAction, refresh]);
+  const briefList = briefs ?? [];
   return /* @__PURE__ */ jsxs("div", { children: [
-    /* @__PURE__ */ jsxs("div", { style: { ...cardStyle, padding: 14 }, children: [
-      /* @__PURE__ */ jsx("div", { style: { fontSize: "0.8rem", fontWeight: 600, color: "rgba(255,255,255,0.6)", marginBottom: 8 }, children: "Generate Executive Brief" }),
-      /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8 }, children: [
-        /* @__PURE__ */ jsx("input", { style: { ...inputCss, flex: 1 }, value: issueId, onChange: (e) => setIssueId(e.target.value), placeholder: "Issue ID (e.g. ANI-877)" }),
-        /* @__PURE__ */ jsx("button", { style: btnPrimary, onClick: handleGenerate, disabled: generating || !issueId.trim(), children: generating ? "Generating..." : "Generate" })
-      ] })
+    /* @__PURE__ */ jsxs(KBCard, { style: { padding: "20px 22px", marginBottom: 8 }, children: [
+      /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }, children: [
+        /* @__PURE__ */ jsx("span", { style: { color: KB.purpleText, display: "flex" }, children: Icons.sparkle(16) }),
+        /* @__PURE__ */ jsx("span", { style: { fontSize: "0.875rem", fontWeight: 600, color: KB.textSecondary }, children: "Generate Executive Brief" })
+      ] }),
+      /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 10 }, children: [
+        /* @__PURE__ */ jsx(
+          KBInput,
+          {
+            value: issueId,
+            onChange: setIssueId,
+            placeholder: "Issue ID (e.g. ANI-877)",
+            mono: true,
+            style: { flex: 1 },
+            onKeyDown: (e) => e.key === "Enter" && handleGenerate()
+          }
+        ),
+        /* @__PURE__ */ jsx(KBButton, { onClick: handleGenerate, disabled: generating || !issueId.trim(), children: generating ? /* @__PURE__ */ jsxs("span", { style: { display: "flex", alignItems: "center", gap: 6 }, children: [
+          /* @__PURE__ */ jsx("span", { style: { display: "flex", animation: "spin 1s linear infinite" }, children: Icons.refresh() }),
+          "Generating..."
+        ] }) : "Generate" })
+      ] }),
+      toast && /* @__PURE__ */ jsx("div", { style: { marginTop: 12 }, children: /* @__PURE__ */ jsx(KBToast, { message: toast.msg, type: toast.type }) })
     ] }),
-    /* @__PURE__ */ jsxs("div", { style: { fontSize: "0.8rem", fontWeight: 600, color: "rgba(255,255,255,0.6)", marginTop: 16, marginBottom: 8 }, children: [
-      (briefs ?? []).length,
-      " executive briefs"
-    ] }),
-    (briefs ?? []).map((b) => {
+    /* @__PURE__ */ jsx(KBSectionHeader, { title: "Executive Briefs", count: briefList.length }),
+    briefList.length === 0 ? /* @__PURE__ */ jsx(
+      KBEmptyState,
+      {
+        icon: Icons.brief(40),
+        title: "No briefs yet",
+        description: "Generate an executive brief from a completed issue above, or enable auto-brief to generate them automatically."
+      }
+    ) : /* @__PURE__ */ jsx("div", { style: { display: "flex", flexDirection: "column", gap: 8 }, children: briefList.map((b) => {
       const isExpanded = expanded === b.id;
-      return /* @__PURE__ */ jsxs("div", { style: cardStyle, children: [
-        /* @__PURE__ */ jsx("div", { style: { ...rowStyle, cursor: "pointer" }, onClick: () => setExpanded(isExpanded ? null : b.id), children: /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8 }, children: [
-          /* @__PURE__ */ jsx("span", { style: badgeStyle("rgb(168,85,247)"), children: "brief" }),
-          /* @__PURE__ */ jsx("span", { style: { fontWeight: 500, color: "#fff" }, children: b.title }),
-          b.issue && /* @__PURE__ */ jsx("span", { style: mutedSm, children: b.issue }),
-          /* @__PURE__ */ jsx("span", { style: { ...mutedSm, marginLeft: "auto" }, children: isExpanded ? "\u25BE" : "\u25B8" })
-        ] }) }),
-        isExpanded && /* @__PURE__ */ jsx("div", { style: { padding: "12px 14px", fontSize: "0.85rem", color: "rgba(255,255,255,0.8)", lineHeight: 1.6, whiteSpace: "pre-wrap", maxHeight: 500, overflowY: "auto" }, children: b.content })
-      ] }, b.id);
-    })
+      return /* @__PURE__ */ jsx(KBCard, { hoverable: true, onClick: () => setExpanded(isExpanded ? null : b.id), children: /* @__PURE__ */ jsxs("div", { style: { padding: "14px 18px" }, children: [
+        /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10 }, children: [
+          /* @__PURE__ */ jsx(KBBadge, { bg: KB.purpleBg, color: KB.purpleText, children: "Brief" }),
+          /* @__PURE__ */ jsx("span", { style: { fontSize: "0.9rem", fontWeight: 600, color: KB.textPrimary, flex: 1 }, children: b.title }),
+          /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }, children: [
+            b.issue && /* @__PURE__ */ jsx("span", { style: {
+              fontSize: "0.75rem",
+              color: KB.textTertiary,
+              fontFamily: "ui-monospace, monospace"
+            }, children: b.issue }),
+            /* @__PURE__ */ jsx("span", { style: {
+              display: "flex",
+              transition: "transform 0.2s ease",
+              transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)",
+              color: KB.textQuaternary
+            }, children: Icons.chevron() })
+          ] })
+        ] }),
+        isExpanded && /* @__PURE__ */ jsx("div", { style: {
+          marginTop: 14,
+          padding: "16px 18px",
+          borderRadius: KB.radiusSm,
+          background: "rgba(0,0,0,0.15)",
+          fontSize: "0.875rem",
+          color: KB.textSecondary,
+          lineHeight: 1.7,
+          whiteSpace: "pre-wrap",
+          maxHeight: 500,
+          overflowY: "auto"
+        }, children: b.content })
+      ] }) }, b.id);
+    }) })
   ] });
 }
 function KBStatsTab({ companyId }) {
@@ -1003,33 +1585,54 @@ function KBStatsTab({ companyId }) {
   const s = stats ?? { indexedIssues: 0, uploadedDocuments: 0, generatedBriefs: 0 };
   const connected = status?.memosConnected ?? false;
   return /* @__PURE__ */ jsxs("div", { children: [
-    /* @__PURE__ */ jsx("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 12, marginBottom: 16 }, children: [
-      { label: "Indexed Issues", value: s.indexedIssues },
-      { label: "Documents", value: s.uploadedDocuments },
-      { label: "Briefs", value: s.generatedBriefs },
-      { label: "Tracked Files", value: folders?.hashCount ?? 0 }
-    ].map((item) => /* @__PURE__ */ jsxs("div", { style: { textAlign: "center", padding: 14, ...cardStyle }, children: [
-      /* @__PURE__ */ jsx("div", { style: { fontSize: "1.5rem", fontWeight: 700, color: "#fff" }, children: item.value }),
-      /* @__PURE__ */ jsx("div", { style: { fontSize: "0.75rem", color: "rgba(255,255,255,0.5)" }, children: item.label })
-    ] }, item.label)) }),
-    /* @__PURE__ */ jsxs("div", { style: cardStyle, children: [
-      /* @__PURE__ */ jsxs("div", { style: rowStyle, children: [
-        /* @__PURE__ */ jsx("span", { style: { color: "rgba(255,255,255,0.5)" }, children: "MemOS" }),
-        /* @__PURE__ */ jsx("span", { style: { float: "right", color: connected ? "rgb(34,197,94)" : "rgb(239,68,68)" }, children: connected ? "Connected" : "Disconnected" })
-      ] }),
-      /* @__PURE__ */ jsxs("div", { style: rowStyle, children: [
-        /* @__PURE__ */ jsx("span", { style: { color: "rgba(255,255,255,0.5)" }, children: "Watch Folders" }),
-        /* @__PURE__ */ jsx("span", { style: { float: "right", color: "#fff" }, children: folders?.watchFolders?.length ?? 0 })
-      ] }),
-      s.lastIndexAt && /* @__PURE__ */ jsxs("div", { style: rowStyle, children: [
-        /* @__PURE__ */ jsx("span", { style: { color: "rgba(255,255,255,0.5)" }, children: "Last Indexed" }),
-        /* @__PURE__ */ jsx("span", { style: { float: "right", color: "#fff" }, children: new Date(s.lastIndexAt).toLocaleString() })
-      ] }),
-      s.lastBriefAt && /* @__PURE__ */ jsxs("div", { style: { ...rowStyle, borderBottom: "none" }, children: [
-        /* @__PURE__ */ jsx("span", { style: { color: "rgba(255,255,255,0.5)" }, children: "Last Brief" }),
-        /* @__PURE__ */ jsx("span", { style: { float: "right", color: "#fff" }, children: new Date(s.lastBriefAt).toLocaleString() })
+    /* @__PURE__ */ jsxs("div", { style: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 24 }, children: [
+      /* @__PURE__ */ jsx(KBMetricCard, { value: s.indexedIssues, label: "Indexed Issues", icon: Icons.check(22) }),
+      /* @__PURE__ */ jsx(KBMetricCard, { value: s.uploadedDocuments, label: "Documents", icon: Icons.doc(22) }),
+      /* @__PURE__ */ jsx(KBMetricCard, { value: s.generatedBriefs, label: "Briefs", icon: Icons.brief(22) }),
+      /* @__PURE__ */ jsx(KBMetricCard, { value: folders?.hashCount ?? 0, label: "Tracked Files", icon: Icons.folder(22) })
+    ] }),
+    /* @__PURE__ */ jsx(KBSectionHeader, { title: "System Status" }),
+    /* @__PURE__ */ jsx(KBCard, { children: [
+      {
+        label: "MemOS",
+        value: connected ? "Connected" : "Disconnected",
+        color: connected ? KB.greenText : KB.redText,
+        dot: connected ? KB.green : KB.red
+      },
+      {
+        label: "Watch Folders",
+        value: String(folders?.watchFolders?.length ?? 0),
+        color: KB.textPrimary
+      },
+      ...s.lastIndexAt ? [{
+        label: "Last Indexed",
+        value: new Date(s.lastIndexAt).toLocaleString(),
+        color: KB.textSecondary
+      }] : [],
+      ...s.lastBriefAt ? [{
+        label: "Last Brief",
+        value: new Date(s.lastBriefAt).toLocaleString(),
+        color: KB.textSecondary
+      }] : []
+    ].map((row, i, arr) => /* @__PURE__ */ jsxs("div", { style: {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      padding: "13px 18px",
+      borderBottom: i < arr.length - 1 ? `1px solid ${KB.cardBorder}` : "none"
+    }, children: [
+      /* @__PURE__ */ jsx("span", { style: { fontSize: "0.85rem", color: KB.textTertiary }, children: row.label }),
+      /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8 }, children: [
+        "dot" in row && /* @__PURE__ */ jsx("span", { style: {
+          width: 7,
+          height: 7,
+          borderRadius: "50%",
+          background: row.dot,
+          display: "inline-block"
+        } }),
+        /* @__PURE__ */ jsx("span", { style: { fontSize: "0.85rem", color: row.color, fontWeight: 500 }, children: row.value })
       ] })
-    ] })
+    ] }, row.label)) })
   ] });
 }
 export {

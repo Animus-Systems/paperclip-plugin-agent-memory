@@ -873,54 +873,444 @@ export function KBSidebarLink({ context }: PluginSidebarProps) {
 }
 
 // ══════════════════════════════════════════════════════════════
-// KB FULL PAGE
+// KB FULL PAGE — Apple-inspired design
 // ══════════════════════════════════════════════════════════════
 
 interface KBDocEntry { id: string; title: string; source: string; issue: string | null; agent: string | null; excerpt: string; score?: number; }
 interface KBBrief { id: string; title: string; issue: string | null; content: string; }
 interface KBFolderInfo { watchFolders: string[]; hashCount: number; }
 
-const pageBg: React.CSSProperties = { padding: "1.5rem 2rem", maxWidth: 960, margin: "0 auto" };
-const tabBar: React.CSSProperties = { display: "flex", gap: 2, borderBottom: "1px solid rgba(255,255,255,0.08)", marginBottom: 16 };
-const tabStyle = (active: boolean): React.CSSProperties => ({
-  padding: "8px 16px", fontSize: "0.85rem", fontWeight: 500, cursor: "pointer",
-  borderBottom: active ? "2px solid rgb(99,102,241)" : "2px solid transparent",
-  color: active ? "#fff" : "rgba(255,255,255,0.5)", background: "none", border: "none",
-  borderBottomStyle: "solid",
-});
-const cardStyle: React.CSSProperties = { background: "rgba(255,255,255,0.03)", borderRadius: 8, border: "1px solid rgba(255,255,255,0.06)", marginBottom: 12 };
-const rowStyle: React.CSSProperties = { padding: "10px 14px", borderBottom: "1px solid rgba(255,255,255,0.04)", fontSize: "0.85rem" };
-const badgeStyle = (color: string): React.CSSProperties => ({ display: "inline-block", padding: "1px 6px", borderRadius: 3, fontSize: "0.7rem", fontWeight: 500, background: `${color}22`, color, marginRight: 4 });
-const inputCss: React.CSSProperties = { padding: "8px 12px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.06)", color: "#fff", fontSize: "0.85rem", outline: "none", width: "100%" };
-const btnPrimary: React.CSSProperties = { padding: "8px 18px", borderRadius: 6, border: "none", background: "rgba(99,102,241,0.3)", color: "rgb(165,168,255)", fontSize: "0.85rem", fontWeight: 500, cursor: "pointer" };
-const btnDanger: React.CSSProperties = { padding: "4px 10px", borderRadius: 4, border: "none", background: "rgba(239,68,68,0.15)", color: "rgb(252,165,165)", fontSize: "0.75rem", cursor: "pointer" };
-const mutedSm: React.CSSProperties = { fontSize: "0.75rem", color: "rgba(255,255,255,0.4)" };
+// ── Design tokens ──────────────────────────────────────────
 
-const SOURCE_COLORS: Record<string, string> = {
-  issue_completion: "rgb(34,197,94)",
-  document: "rgb(59,130,246)",
-  executive_brief: "rgb(168,85,247)",
-  unknown: "rgb(161,161,170)",
+const KB = {
+  radius: 14,
+  radiusSm: 10,
+  radiusXs: 8,
+  gap: 16,
+  // Surfaces
+  bg: "rgba(255,255,255,0.02)",
+  cardBg: "rgba(255,255,255,0.04)",
+  cardBgHover: "rgba(255,255,255,0.06)",
+  cardBorder: "rgba(255,255,255,0.06)",
+  cardBorderHover: "rgba(255,255,255,0.10)",
+  inputBg: "rgba(255,255,255,0.05)",
+  inputBorder: "rgba(255,255,255,0.10)",
+  inputFocus: "rgba(99,102,241,0.4)",
+  // Text
+  textPrimary: "#fff",
+  textSecondary: "rgba(255,255,255,0.65)",
+  textTertiary: "rgba(255,255,255,0.40)",
+  textQuaternary: "rgba(255,255,255,0.25)",
+  // Accent
+  accent: "rgb(99,102,241)",
+  accentBg: "rgba(99,102,241,0.12)",
+  accentText: "rgb(165,168,255)",
+  // Status
+  green: "rgb(34,197,94)",
+  greenBg: "rgba(34,197,94,0.10)",
+  greenText: "rgb(134,239,172)",
+  blue: "rgb(59,130,246)",
+  blueBg: "rgba(59,130,246,0.10)",
+  blueText: "rgb(147,197,253)",
+  purple: "rgb(168,85,247)",
+  purpleBg: "rgba(168,85,247,0.10)",
+  purpleText: "rgb(196,167,255)",
+  red: "rgb(239,68,68)",
+  redBg: "rgba(239,68,68,0.10)",
+  redText: "rgb(252,165,165)",
+  amber: "rgb(245,158,11)",
+  amberBg: "rgba(245,158,11,0.10)",
+  amberText: "rgb(252,211,77)",
+  zinc: "rgb(161,161,170)",
+  zincBg: "rgba(161,161,170,0.10)",
+} as const;
+
+const SOURCE_THEME: Record<string, { bg: string; text: string; label: string; icon: string }> = {
+  issue_completion: { bg: KB.greenBg, text: KB.greenText, label: "Issue", icon: "checkmark.circle.fill" },
+  document: { bg: KB.blueBg, text: KB.blueText, label: "Document", icon: "doc.fill" },
+  executive_brief: { bg: KB.purpleBg, text: KB.purpleText, label: "Brief", icon: "text.document.fill" },
+  manual_upload: { bg: KB.blueBg, text: KB.blueText, label: "Upload", icon: "arrow.up.doc.fill" },
+  unknown: { bg: KB.zincBg, text: KB.zinc, label: "Other", icon: "questionmark.circle" },
 };
 
+// ── Shared Apple-style components ──────────────────────────
+
+function KBCard({ children, style, onClick, hoverable = false }: {
+  children: React.ReactNode; style?: React.CSSProperties; onClick?: () => void; hoverable?: boolean;
+}) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <div
+      onClick={onClick}
+      onMouseEnter={hoverable ? () => setHovered(true) : undefined}
+      onMouseLeave={hoverable ? () => setHovered(false) : undefined}
+      style={{
+        background: hovered ? KB.cardBgHover : KB.cardBg,
+        borderRadius: KB.radius,
+        border: `1px solid ${hovered ? KB.cardBorderHover : KB.cardBorder}`,
+        transition: "all 0.2s ease",
+        cursor: onClick ? "pointer" : undefined,
+        ...style,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function KBInput({ value, onChange, onKeyDown, placeholder, style, large, mono }: {
+  value: string; onChange: (v: string) => void; onKeyDown?: (e: React.KeyboardEvent) => void;
+  placeholder?: string; style?: React.CSSProperties; large?: boolean; mono?: boolean;
+}) {
+  const [focused, setFocused] = useState(false);
+  return (
+    <input
+      type="text"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      onKeyDown={onKeyDown}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      placeholder={placeholder}
+      style={{
+        padding: large ? "12px 16px" : "9px 13px",
+        borderRadius: KB.radiusSm,
+        border: `1px solid ${focused ? KB.inputFocus : KB.inputBorder}`,
+        background: KB.inputBg,
+        color: KB.textPrimary,
+        fontSize: large ? "1rem" : "0.875rem",
+        fontFamily: mono ? "ui-monospace, 'SF Mono', monospace" : "inherit",
+        outline: "none",
+        width: "100%",
+        transition: "border-color 0.2s ease, box-shadow 0.2s ease",
+        boxShadow: focused ? `0 0 0 3px ${KB.accentBg}` : "none",
+        ...style,
+      }}
+    />
+  );
+}
+
+function KBTextarea({ value, onChange, placeholder, rows = 4, mono, style }: {
+  value: string; onChange: (v: string) => void; placeholder?: string; rows?: number; mono?: boolean; style?: React.CSSProperties;
+}) {
+  const [focused, setFocused] = useState(false);
+  return (
+    <textarea
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      placeholder={placeholder}
+      rows={rows}
+      style={{
+        padding: "10px 14px",
+        borderRadius: KB.radiusSm,
+        border: `1px solid ${focused ? KB.inputFocus : KB.inputBorder}`,
+        background: KB.inputBg,
+        color: KB.textPrimary,
+        fontSize: "0.875rem",
+        fontFamily: mono ? "ui-monospace, 'SF Mono', monospace" : "inherit",
+        outline: "none",
+        width: "100%",
+        resize: "vertical" as const,
+        transition: "border-color 0.2s ease, box-shadow 0.2s ease",
+        boxShadow: focused ? `0 0 0 3px ${KB.accentBg}` : "none",
+        lineHeight: 1.5,
+        ...style,
+      }}
+    />
+  );
+}
+
+function KBButton({ children, onClick, disabled, variant = "primary", size = "md", style }: {
+  children: React.ReactNode; onClick?: () => void; disabled?: boolean;
+  variant?: "primary" | "secondary" | "ghost"; size?: "sm" | "md"; style?: React.CSSProperties;
+}) {
+  const [hovered, setHovered] = useState(false);
+  const base: React.CSSProperties = {
+    padding: size === "sm" ? "6px 14px" : "9px 20px",
+    borderRadius: KB.radiusXs,
+    border: "none",
+    fontSize: size === "sm" ? "0.8rem" : "0.875rem",
+    fontWeight: 500,
+    cursor: disabled ? "default" : "pointer",
+    opacity: disabled ? 0.4 : 1,
+    transition: "all 0.15s ease",
+    whiteSpace: "nowrap" as const,
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
+    fontFamily: "inherit",
+  };
+  const variants: Record<string, React.CSSProperties> = {
+    primary: {
+      background: hovered && !disabled ? "rgba(99,102,241,0.35)" : "rgba(99,102,241,0.22)",
+      color: KB.accentText,
+    },
+    secondary: {
+      background: hovered && !disabled ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.04)",
+      color: KB.textSecondary,
+      border: `1px solid ${KB.cardBorder}`,
+    },
+    ghost: {
+      background: hovered && !disabled ? "rgba(255,255,255,0.06)" : "transparent",
+      color: KB.textTertiary,
+    },
+  };
+  return (
+    <button
+      onClick={onClick} disabled={disabled}
+      onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
+      style={{ ...base, ...variants[variant], ...style }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function KBBadge({ children, bg, color }: { children: React.ReactNode; bg: string; color: string }) {
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center", padding: "2px 8px",
+      borderRadius: 6, fontSize: "0.7rem", fontWeight: 600,
+      background: bg, color, letterSpacing: "0.02em",
+      textTransform: "uppercase" as const,
+    }}>
+      {children}
+    </span>
+  );
+}
+
+function KBMetricCard({ value, label, icon }: { value: number | string; label: string; icon: React.ReactNode }) {
+  return (
+    <KBCard style={{ padding: "20px 16px", textAlign: "center" }}>
+      <div style={{ marginBottom: 8, opacity: 0.5 }}>{icon}</div>
+      <div style={{
+        fontSize: "1.75rem", fontWeight: 700, color: KB.textPrimary,
+        letterSpacing: "-0.02em", lineHeight: 1,
+      }}>
+        {value}
+      </div>
+      <div style={{
+        fontSize: "0.75rem", color: KB.textTertiary, marginTop: 6,
+        fontWeight: 500, letterSpacing: "0.02em",
+      }}>
+        {label}
+      </div>
+    </KBCard>
+  );
+}
+
+function KBToast({ message, type = "info" }: { message: string; type?: "success" | "error" | "info" }) {
+  const colors = {
+    success: { bg: KB.greenBg, border: "rgba(34,197,94,0.2)", text: KB.greenText, icon: "\u2713" },
+    error: { bg: KB.redBg, border: "rgba(239,68,68,0.2)", text: KB.redText, icon: "\u2717" },
+    info: { bg: KB.accentBg, border: "rgba(99,102,241,0.2)", text: KB.accentText, icon: "\u2139" },
+  };
+  const c = colors[type];
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", gap: 10,
+      padding: "10px 16px", borderRadius: KB.radiusSm,
+      background: c.bg, border: `1px solid ${c.border}`,
+      fontSize: "0.85rem", color: c.text,
+      animation: "fadeIn 0.2s ease",
+    }}>
+      <span style={{ fontSize: "0.9rem", fontWeight: 700 }}>{c.icon}</span>
+      {message}
+    </div>
+  );
+}
+
+function KBEmptyState({ icon, title, description }: { icon: React.ReactNode; title: string; description: string }) {
+  return (
+    <div style={{
+      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+      padding: "48px 24px", textAlign: "center",
+    }}>
+      <div style={{ marginBottom: 16, opacity: 0.3 }}>{icon}</div>
+      <div style={{ fontSize: "1rem", fontWeight: 600, color: KB.textSecondary, marginBottom: 6 }}>{title}</div>
+      <div style={{ fontSize: "0.85rem", color: KB.textTertiary, maxWidth: 360, lineHeight: 1.5 }}>{description}</div>
+    </div>
+  );
+}
+
+function KBSectionHeader({ title, count, right }: { title: string; count?: number; right?: React.ReactNode }) {
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", justifyContent: "space-between",
+      marginBottom: 12, marginTop: 24,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ fontSize: "0.8rem", fontWeight: 600, color: KB.textSecondary, letterSpacing: "0.03em" }}>
+          {title}
+        </span>
+        {count != null && (
+          <span style={{
+            fontSize: "0.7rem", fontWeight: 600, color: KB.textTertiary,
+            background: "rgba(255,255,255,0.06)", padding: "1px 7px", borderRadius: 10,
+          }}>
+            {count}
+          </span>
+        )}
+      </div>
+      {right}
+    </div>
+  );
+}
+
+// SVG icons (inline, Apple SF Symbols inspired)
+const Icons = {
+  search: (size = 18) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+    </svg>
+  ),
+  doc: (size = 18) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+      <polyline points="14 2 14 8 20 8" />
+    </svg>
+  ),
+  folder: (size = 18) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
+    </svg>
+  ),
+  brief: (size = 18) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+      <polyline points="14 2 14 8 20 8" />
+      <line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><line x1="10" y1="9" x2="8" y2="9" />
+    </svg>
+  ),
+  chart: (size = 18) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" />
+    </svg>
+  ),
+  check: (size = 18) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" />
+    </svg>
+  ),
+  upload: (size = 18) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
+    </svg>
+  ),
+  chevron: (size = 14) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="9 18 15 12 9 6" />
+    </svg>
+  ),
+  sparkle: (size = 18) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" />
+    </svg>
+  ),
+  refresh: (size = 14) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+      <path d="M3 3v5h5" /><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
+      <path d="M16 16h5v5" />
+    </svg>
+  ),
+};
+
+// ── Metadata parser for MemOS content ──────────────────────
+
+function parseKBContent(raw: string): {
+  title: string; source: string; agent: string | null;
+  issue: string | null; content: string; type: string | null;
+} {
+  const tags: Record<string, string> = {};
+  // Match [key: value] tags at start or within content
+  const tagRegex = /\[(\w+(?:_\w+)*): ([^\]]+)\]/g;
+  let m: RegExpExecArray | null;
+  while ((m = tagRegex.exec(raw)) !== null) {
+    tags[m[1]] = m[2];
+  }
+  const content = raw.replace(/\[[\w_]+: [^\]]+\]\s*/g, "").trim();
+  return {
+    title: tags["title"] ?? (content.substring(0, 60) + (content.length > 60 ? "..." : "")),
+    source: tags["kb_source"] ?? tags["source"] ?? tags["type"] ?? "unknown",
+    agent: tags["agent"] ?? null,
+    issue: tags["issue"] ?? null,
+    content,
+    type: tags["type"] ?? null,
+  };
+}
+
+// ── Page layout ────────────────────────────────────────────
+
+const TABS = [
+  { key: "search", label: "Search", icon: Icons.search },
+  { key: "documents", label: "Documents", icon: Icons.doc },
+  { key: "folders", label: "Folders", icon: Icons.folder },
+  { key: "briefs", label: "Briefs", icon: Icons.brief },
+  { key: "stats", label: "Overview", icon: Icons.chart },
+] as const;
+
+type KBTabKey = typeof TABS[number]["key"];
+
 export function KBPage({ context }: PluginPageProps) {
-  const [tab, setTab] = useState<"search" | "documents" | "folders" | "briefs" | "stats">("search");
+  const [tab, setTab] = useState<KBTabKey>("search");
 
   return (
-    <div style={pageBg}>
-      <h2 style={{ fontSize: "1.2rem", fontWeight: 700, color: "#fff", marginBottom: 12 }}>Knowledge Base</h2>
-      <div style={tabBar}>
-        {(["search", "documents", "folders", "briefs", "stats"] as const).map((t) => (
-          <button key={t} style={tabStyle(tab === t)} onClick={() => setTab(t)}>
-            {t.charAt(0).toUpperCase() + t.slice(1)}
-          </button>
-        ))}
+    <div style={{ padding: "24px 32px", maxWidth: 1000, margin: "0 auto" }}>
+      {/* Header */}
+      <div style={{ marginBottom: 24 }}>
+        <h1 style={{
+          fontSize: "1.5rem", fontWeight: 700, color: KB.textPrimary,
+          letterSpacing: "-0.02em", margin: 0,
+        }}>
+          Knowledge Base
+        </h1>
+        <p style={{ fontSize: "0.85rem", color: KB.textTertiary, margin: "4px 0 0" }}>
+          Search, manage, and explore your team's collective knowledge.
+        </p>
       </div>
-      {tab === "search" && <KBSearchTab companyId={context.companyId} />}
-      {tab === "documents" && <KBDocumentsTab companyId={context.companyId} />}
-      {tab === "folders" && <KBFoldersTab companyId={context.companyId} />}
-      {tab === "briefs" && <KBBriefsTab companyId={context.companyId} />}
-      {tab === "stats" && <KBStatsTab companyId={context.companyId} />}
+
+      {/* Segmented control */}
+      <div style={{
+        display: "inline-flex", gap: 2, padding: 3,
+        background: "rgba(255,255,255,0.04)",
+        borderRadius: KB.radiusSm, marginBottom: 28,
+        border: `1px solid ${KB.cardBorder}`,
+      }}>
+        {TABS.map((t) => {
+          const active = tab === t.key;
+          return (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              style={{
+                display: "flex", alignItems: "center", gap: 6,
+                padding: "7px 16px", borderRadius: KB.radiusXs,
+                border: "none", cursor: "pointer",
+                background: active ? "rgba(255,255,255,0.10)" : "transparent",
+                color: active ? KB.textPrimary : KB.textTertiary,
+                fontSize: "0.82rem", fontWeight: 500,
+                transition: "all 0.15s ease",
+                fontFamily: "inherit",
+              }}
+            >
+              <span style={{ opacity: active ? 0.9 : 0.5, display: "flex" }}>{t.icon(14)}</span>
+              {t.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Tab content */}
+      <div>
+        {tab === "search" && <KBSearchTab companyId={context.companyId} />}
+        {tab === "documents" && <KBDocumentsTab companyId={context.companyId} />}
+        {tab === "folders" && <KBFoldersTab companyId={context.companyId} />}
+        {tab === "briefs" && <KBBriefsTab companyId={context.companyId} />}
+        {tab === "stats" && <KBStatsTab companyId={context.companyId} />}
+      </div>
     </div>
   );
 }
@@ -946,52 +1336,140 @@ function KBSearchTab({ companyId }: { companyId: string }) {
 
   return (
     <div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-        <input
-          style={{ ...inputCss, flex: 1, fontSize: "1rem", padding: "10px 14px" }}
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && doSearch()}
-          placeholder="Search completed work, documents, briefs..."
-        />
-        <button style={btnPrimary} onClick={doSearch} disabled={searching}>
+      {/* Search bar */}
+      <div style={{
+        display: "flex", gap: 10, marginBottom: 24, alignItems: "center",
+      }}>
+        <div style={{ flex: 1, position: "relative" }}>
+          <span style={{
+            position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)",
+            color: KB.textTertiary, display: "flex", pointerEvents: "none",
+          }}>
+            {Icons.search(16)}
+          </span>
+          <KBInput
+            value={query}
+            onChange={setQuery}
+            onKeyDown={(e) => e.key === "Enter" && doSearch()}
+            placeholder="Search completed work, documents, briefs..."
+            large
+            style={{ paddingLeft: 40 }}
+          />
+        </div>
+        <KBButton onClick={doSearch} disabled={searching || !query.trim()}>
           {searching ? "Searching..." : "Search"}
-        </button>
+        </KBButton>
       </div>
-      {results !== null && results.length === 0 && (
-        <div style={{ ...mutedSm, padding: 20, textAlign: "center" }}>No results found.</div>
+
+      {/* Results */}
+      {results === null && (
+        <KBEmptyState
+          icon={Icons.search(40)}
+          title="Search your knowledge"
+          description="Find context from completed tasks, uploaded documents, and executive briefs. Results are ranked by relevance."
+        />
       )}
-      {results && results.map((r, i) => {
-        const titleMatch = r.content.match(/\[title: ([^\]]+)\]/);
-        const sourceMatch = r.content.match(/\[kb_source: ([^\]]+)\]/);
-        const agentMatch = r.content.match(/\[agent: ([^\]]+)\]/);
-        const issueMatch = r.content.match(/\[issue: ([^\]]+)\]/);
-        const cleanContent = r.content.replace(/\[[\w_]+: [^\]]+\]/g, "").trim();
-        const source = sourceMatch?.[1] ?? "unknown";
-        const isExpanded = expanded === (r.id || String(i));
-        return (
-          <div key={r.id || i} style={cardStyle}>
-            <div
-              style={{ ...rowStyle, cursor: "pointer", borderBottom: isExpanded ? "1px solid rgba(255,255,255,0.06)" : "none" }}
-              onClick={() => setExpanded(isExpanded ? null : (r.id || String(i)))}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                <span style={badgeStyle(SOURCE_COLORS[source] ?? SOURCE_COLORS.unknown)}>{source.replace("_", " ")}</span>
-                <span style={{ fontWeight: 600, color: "#fff" }}>{titleMatch?.[1] ?? "Untitled"}</span>
-                {issueMatch && <span style={mutedSm}>{issueMatch[1]}</span>}
-                {agentMatch && <span style={mutedSm}>by {agentMatch[1]}</span>}
-                <span style={{ ...mutedSm, marginLeft: "auto" }}>{isExpanded ? "▾" : "▸"}</span>
-              </div>
-              {!isExpanded && <div style={{ ...mutedSm, lineHeight: 1.4 }}>{cleanContent.substring(0, 150)}...</div>}
-            </div>
-            {isExpanded && (
-              <div style={{ padding: "12px 14px", fontSize: "0.85rem", color: "rgba(255,255,255,0.8)", lineHeight: 1.6, whiteSpace: "pre-wrap", maxHeight: 400, overflowY: "auto" }}>
-                {cleanContent}
-              </div>
-            )}
-          </div>
-        );
-      })}
+
+      {results !== null && results.length === 0 && (
+        <KBEmptyState
+          icon={Icons.search(40)}
+          title="No results found"
+          description="Try different keywords or a broader search query."
+        />
+      )}
+
+      {results && results.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <span style={{ fontSize: "0.75rem", color: KB.textTertiary, fontWeight: 500, marginBottom: 4 }}>
+            {results.length} result{results.length !== 1 ? "s" : ""}
+          </span>
+          {results.map((r, i) => {
+            const parsed = parseKBContent(r.content);
+            const source = SOURCE_THEME[parsed.source] ?? SOURCE_THEME.unknown;
+            const key = r.id || String(i);
+            const isExpanded = expanded === key;
+            const relevance = r.score != null ? Math.round(r.score * 100) : null;
+
+            return (
+              <KBCard key={key} hoverable onClick={() => setExpanded(isExpanded ? null : key)}>
+                <div style={{ padding: "14px 18px" }}>
+                  {/* Header row */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: isExpanded ? 12 : 6 }}>
+                    <KBBadge bg={source.bg} color={source.text}>{source.label}</KBBadge>
+                    <span style={{
+                      fontSize: "0.92rem", fontWeight: 600, color: KB.textPrimary,
+                      flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                    }}>
+                      {parsed.title}
+                    </span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                      {parsed.issue && (
+                        <span style={{
+                          fontSize: "0.75rem", color: KB.textTertiary, fontWeight: 500,
+                          background: "rgba(255,255,255,0.05)", padding: "2px 8px",
+                          borderRadius: 6, fontFamily: "ui-monospace, monospace",
+                        }}>
+                          {parsed.issue}
+                        </span>
+                      )}
+                      {relevance != null && (
+                        <span style={{ fontSize: "0.7rem", color: KB.textQuaternary, fontWeight: 500 }}>
+                          {relevance}%
+                        </span>
+                      )}
+                      <span style={{
+                        display: "flex", transition: "transform 0.2s ease",
+                        transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)",
+                        color: KB.textQuaternary,
+                      }}>
+                        {Icons.chevron()}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Meta pills */}
+                  {parsed.agent && !isExpanded && (
+                    <span style={{ fontSize: "0.75rem", color: KB.textTertiary }}>
+                      by {parsed.agent}
+                    </span>
+                  )}
+
+                  {/* Preview when collapsed */}
+                  {!isExpanded && (
+                    <div style={{
+                      fontSize: "0.835rem", color: KB.textTertiary, lineHeight: 1.5,
+                      marginTop: 4, display: "-webkit-box",
+                      WebkitLineClamp: 2, WebkitBoxOrient: "vertical" as const,
+                      overflow: "hidden",
+                    }}>
+                      {parsed.content.substring(0, 200)}
+                    </div>
+                  )}
+
+                  {/* Expanded content */}
+                  {isExpanded && (
+                    <div>
+                      {parsed.agent && (
+                        <div style={{ fontSize: "0.8rem", color: KB.textTertiary, marginBottom: 12 }}>
+                          Generated by <span style={{ color: KB.textSecondary, fontWeight: 500 }}>{parsed.agent}</span>
+                        </div>
+                      )}
+                      <div style={{
+                        fontSize: "0.875rem", color: KB.textSecondary, lineHeight: 1.7,
+                        whiteSpace: "pre-wrap", maxHeight: 400, overflowY: "auto",
+                        padding: "14px 16px", borderRadius: KB.radiusSm,
+                        background: "rgba(0,0,0,0.15)",
+                      }}>
+                        {parsed.content}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </KBCard>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -1003,44 +1481,101 @@ function KBDocumentsTab({ companyId }: { companyId: string }) {
   const [uploadName, setUploadName] = useState("");
   const [uploadContent, setUploadContent] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
   const uploadAction = usePluginAction("kb:upload-document");
 
   const handleUpload = useCallback(async () => {
     if (!uploadName.trim() || !uploadContent.trim()) return;
     setUploading(true);
+    setToast(null);
     try {
       await uploadAction({ companyId, name: uploadName.trim(), content: uploadContent.trim() });
       setUploadName(""); setUploadContent("");
-    } catch { /* */ }
+      setToast({ msg: "Document uploaded successfully", type: "success" });
+    } catch {
+      setToast({ msg: "Failed to upload document", type: "error" });
+    }
     setUploading(false);
+    setTimeout(() => setToast(null), 4000);
   }, [uploadName, uploadContent, companyId, uploadAction]);
+
+  const docList = docs ?? [];
 
   return (
     <div>
-      {/* Upload form */}
-      <div style={{ ...cardStyle, padding: 14 }}>
-        <div style={{ fontSize: "0.8rem", fontWeight: 600, color: "rgba(255,255,255,0.6)", marginBottom: 8 }}>Upload Document</div>
-        <input style={{ ...inputCss, marginBottom: 8 }} value={uploadName} onChange={(e) => setUploadName(e.target.value)} placeholder="Document name" />
-        <textarea style={{ ...inputCss, minHeight: 80, resize: "vertical", fontFamily: "monospace", fontSize: "0.8rem" }} value={uploadContent} onChange={(e) => setUploadContent(e.target.value)} placeholder="Paste document content here..." />
-        <div style={{ marginTop: 8 }}>
-          <button style={btnPrimary} onClick={handleUpload} disabled={uploading || !uploadName.trim() || !uploadContent.trim()}>
-            {uploading ? "Uploading..." : "Upload"}
-          </button>
+      {/* Upload section */}
+      <KBCard style={{ padding: "20px 22px", marginBottom: 8 }}>
+        <div style={{
+          display: "flex", alignItems: "center", gap: 8, marginBottom: 16,
+        }}>
+          <span style={{ color: KB.textTertiary, display: "flex" }}>{Icons.upload(16)}</span>
+          <span style={{ fontSize: "0.875rem", fontWeight: 600, color: KB.textSecondary }}>
+            Upload Document
+          </span>
         </div>
-      </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <KBInput
+            value={uploadName} onChange={setUploadName}
+            placeholder="Document title"
+          />
+          <KBTextarea
+            value={uploadContent} onChange={setUploadContent}
+            placeholder="Paste document content..."
+            rows={4} mono
+          />
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <KBButton
+              onClick={handleUpload}
+              disabled={uploading || !uploadName.trim() || !uploadContent.trim()}
+            >
+              {uploading ? "Uploading..." : "Upload"}
+            </KBButton>
+            {toast && <KBToast message={toast.msg} type={toast.type} />}
+          </div>
+        </div>
+      </KBCard>
 
       {/* Document list */}
-      <div style={{ fontSize: "0.8rem", fontWeight: 600, color: "rgba(255,255,255,0.6)", marginTop: 16, marginBottom: 8 }}>
-        {(docs ?? []).length} documents indexed
-      </div>
-      {(docs ?? []).map((d) => (
-        <div key={d.id} style={{ ...rowStyle, display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={badgeStyle(SOURCE_COLORS[d.source] ?? SOURCE_COLORS.unknown)}>{d.source.replace("_", " ")}</span>
-          <span style={{ fontWeight: 500, color: "#fff", flex: 1 }}>{d.title}</span>
-          {d.issue && <span style={mutedSm}>{d.issue}</span>}
-          {d.agent && <span style={mutedSm}>{d.agent}</span>}
+      <KBSectionHeader title="Documents" count={docList.length} />
+
+      {docList.length === 0 ? (
+        <KBEmptyState
+          icon={Icons.doc(40)}
+          title="No documents yet"
+          description="Upload a document above or enable auto-indexing to capture completed issue output."
+        />
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {docList.map((d) => {
+            const theme = SOURCE_THEME[d.source] ?? SOURCE_THEME.unknown;
+            return (
+              <KBCard key={d.id} hoverable style={{ padding: "12px 18px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <KBBadge bg={theme.bg} color={theme.text}>{theme.label}</KBBadge>
+                  <span style={{ fontSize: "0.875rem", fontWeight: 500, color: KB.textPrimary, flex: 1 }}>
+                    {d.title}
+                  </span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    {d.issue && (
+                      <span style={{
+                        fontSize: "0.75rem", color: KB.textTertiary,
+                        fontFamily: "ui-monospace, monospace",
+                      }}>
+                        {d.issue}
+                      </span>
+                    )}
+                    {d.agent && (
+                      <span style={{ fontSize: "0.75rem", color: KB.textQuaternary }}>
+                        {d.agent}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </KBCard>
+            );
+          })}
         </div>
-      ))}
+      )}
     </div>
   );
 }
@@ -1051,54 +1586,106 @@ function KBFoldersTab({ companyId }: { companyId: string }) {
   const { data: info } = usePluginData<KBFolderInfo>("kb:indexed-folders", { companyId });
   const [newFolder, setNewFolder] = useState("");
   const [indexing, setIndexing] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
   const indexAction = usePluginAction("kb:index-folder");
 
   const handleIndex = useCallback(async (path: string) => {
     setIndexing(path);
+    setToast(null);
     try {
       const res = await indexAction({ companyId, path, recursive: true }) as Record<string, unknown>;
-      alert(res.ok ? `Indexed ${res.indexed} new files (${res.unchanged} unchanged, ${res.skipped} skipped)` : `Error: ${res.error}`);
+      if (res.ok) {
+        setToast({ msg: `Indexed ${res.indexed} files (${res.unchanged} unchanged, ${res.skipped} skipped)`, type: "success" });
+        if (path === newFolder) setNewFolder("");
+      } else {
+        setToast({ msg: `Error: ${res.error}`, type: "error" });
+      }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : typeof err === "object" ? JSON.stringify(err) : String(err);
-      alert(`Failed: ${msg.includes("502") || msg.includes("timeout") ? "Timed out — the brief may still be generating. Check back shortly." : msg}`);
+      const msg = err instanceof Error ? err.message : String(err);
+      setToast({ msg: msg.includes("502") || msg.includes("timeout")
+        ? "Timed out \u2014 indexing may still be running" : `Failed: ${msg}`, type: "error" });
     }
     setIndexing(null);
-  }, [companyId, indexAction]);
+    setTimeout(() => setToast(null), 6000);
+  }, [companyId, indexAction, newFolder]);
 
   const folders = info?.watchFolders ?? [];
 
   return (
     <div>
       {/* Index new folder */}
-      <div style={{ ...cardStyle, padding: 14 }}>
-        <div style={{ fontSize: "0.8rem", fontWeight: 600, color: "rgba(255,255,255,0.6)", marginBottom: 8 }}>Index a Folder</div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <input style={{ ...inputCss, flex: 1 }} value={newFolder} onChange={(e) => setNewFolder(e.target.value)} placeholder="/data/accounts/Animus-Systems-SL" />
-          <button style={btnPrimary} onClick={() => { if (newFolder.trim()) handleIndex(newFolder.trim()); }} disabled={!!indexing || !newFolder.trim()}>
-            {indexing === newFolder ? "Indexing..." : "Index Now"}
-          </button>
+      <KBCard style={{ padding: "20px 22px", marginBottom: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+          <span style={{ color: KB.textTertiary, display: "flex" }}>{Icons.folder(16)}</span>
+          <span style={{ fontSize: "0.875rem", fontWeight: 600, color: KB.textSecondary }}>
+            Index a Folder
+          </span>
         </div>
-      </div>
+        <div style={{ display: "flex", gap: 10 }}>
+          <KBInput
+            value={newFolder} onChange={setNewFolder}
+            placeholder="/data/accounts/Animus-Systems-SL"
+            mono style={{ flex: 1 }}
+          />
+          <KBButton
+            onClick={() => { if (newFolder.trim()) handleIndex(newFolder.trim()); }}
+            disabled={!!indexing || !newFolder.trim()}
+          >
+            {indexing === newFolder ? "Indexing..." : "Index Now"}
+          </KBButton>
+        </div>
+        {toast && <div style={{ marginTop: 12 }}><KBToast message={toast.msg} type={toast.type} /></div>}
+      </KBCard>
 
       {/* Watch folders */}
-      <div style={{ fontSize: "0.8rem", fontWeight: 600, color: "rgba(255,255,255,0.6)", marginTop: 16, marginBottom: 8 }}>
-        Watch Folders ({folders.length}) · {info?.hashCount ?? 0} files tracked
-      </div>
+      <KBSectionHeader
+        title="Watch Folders"
+        count={folders.length}
+        right={
+          <span style={{ fontSize: "0.75rem", color: KB.textQuaternary }}>
+            {info?.hashCount ?? 0} files tracked
+          </span>
+        }
+      />
+
       {folders.length === 0 ? (
-        <div style={{ ...mutedSm, padding: 12 }}>No watch folders configured. Add them in Agent Memory Settings.</div>
+        <KBEmptyState
+          icon={Icons.folder(40)}
+          title="No watch folders"
+          description="Configure watch folders in Agent Memory Settings to auto-index files every 6 hours."
+        />
       ) : (
-        folders.map((f) => (
-          <div key={f} style={{ ...rowStyle, display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontFamily: "monospace", fontSize: "0.8rem", color: "#fff", flex: 1 }}>{f}</span>
-            <button
-              style={{ ...btnPrimary, padding: "4px 12px", fontSize: "0.75rem" }}
-              onClick={() => handleIndex(f)}
-              disabled={!!indexing}
-            >
-              {indexing === f ? "..." : "Re-index"}
-            </button>
-          </div>
-        ))
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {folders.map((f) => (
+            <KBCard key={f} hoverable style={{ padding: "12px 18px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <span style={{ color: KB.textTertiary, display: "flex" }}>{Icons.folder(15)}</span>
+                <span style={{
+                  fontFamily: "ui-monospace, 'SF Mono', monospace",
+                  fontSize: "0.825rem", color: KB.textPrimary, flex: 1,
+                }}>
+                  {f}
+                </span>
+                <KBButton
+                  size="sm" variant="secondary"
+                  onClick={() => handleIndex(f)}
+                  disabled={!!indexing}
+                >
+                  {indexing === f ? (
+                    <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                      <span style={{ display: "flex", animation: "spin 1s linear infinite" }}>{Icons.refresh()}</span>
+                      Indexing
+                    </span>
+                  ) : (
+                    <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                      {Icons.refresh()} Re-index
+                    </span>
+                  )}
+                </KBButton>
+              </div>
+            </KBCard>
+          ))}
+        </div>
       )}
     </div>
   );
@@ -1107,72 +1694,128 @@ function KBFoldersTab({ companyId }: { companyId: string }) {
 // ── Briefs Tab ──────────────────────────────────────────────
 
 function KBBriefsTab({ companyId }: { companyId: string }) {
-  const { data: briefs } = usePluginData<KBBrief[]>("kb:list-briefs", { companyId });
+  const { data: briefs, refresh } = usePluginData<KBBrief[]>("kb:list-briefs", { companyId });
   const [expanded, setExpanded] = useState<string | null>(null);
   const [issueId, setIssueId] = useState("");
   const [generating, setGenerating] = useState(false);
+  const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
   const briefAction = usePluginAction("kb:generate-brief");
 
   const handleGenerate = useCallback(async () => {
     if (!issueId.trim()) return;
     setGenerating(true);
+    setToast(null);
     try {
       const res = await briefAction({ companyId, issueId: issueId.trim() }) as Record<string, unknown>;
       if (res.ok) {
-        alert("Brief generated successfully!");
+        setToast({ msg: "Brief generated successfully", type: "success" });
         setIssueId("");
+        refresh();
       } else {
-        alert(`Error: ${res.error}`);
+        setToast({ msg: `Error: ${res.error}`, type: "error" });
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : typeof err === "object" ? JSON.stringify(err) : String(err);
-      alert(`Failed: ${msg.includes("502") || msg.includes("timeout") ? "Timed out — the brief may still be generating. Check back shortly." : msg}`);
+      const msg = err instanceof Error ? err.message : String(err);
+      setToast({ msg: msg.includes("502") || msg.includes("timeout")
+        ? "Timed out \u2014 the brief may still be generating" : `Failed: ${msg}`, type: "error" });
     }
     setGenerating(false);
-  }, [issueId, companyId, briefAction]);
+    setTimeout(() => setToast(null), 6000);
+  }, [issueId, companyId, briefAction, refresh]);
+
+  const briefList = briefs ?? [];
 
   return (
     <div>
       {/* Generate brief */}
-      <div style={{ ...cardStyle, padding: 14 }}>
-        <div style={{ fontSize: "0.8rem", fontWeight: 600, color: "rgba(255,255,255,0.6)", marginBottom: 8 }}>Generate Executive Brief</div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <input style={{ ...inputCss, flex: 1 }} value={issueId} onChange={(e) => setIssueId(e.target.value)} placeholder="Issue ID (e.g. ANI-877)" />
-          <button style={btnPrimary} onClick={handleGenerate} disabled={generating || !issueId.trim()}>
-            {generating ? "Generating..." : "Generate"}
-          </button>
+      <KBCard style={{ padding: "20px 22px", marginBottom: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+          <span style={{ color: KB.purpleText, display: "flex" }}>{Icons.sparkle(16)}</span>
+          <span style={{ fontSize: "0.875rem", fontWeight: 600, color: KB.textSecondary }}>
+            Generate Executive Brief
+          </span>
         </div>
-      </div>
+        <div style={{ display: "flex", gap: 10 }}>
+          <KBInput
+            value={issueId} onChange={setIssueId}
+            placeholder="Issue ID (e.g. ANI-877)"
+            mono style={{ flex: 1 }}
+            onKeyDown={(e) => e.key === "Enter" && handleGenerate()}
+          />
+          <KBButton onClick={handleGenerate} disabled={generating || !issueId.trim()}>
+            {generating ? (
+              <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ display: "flex", animation: "spin 1s linear infinite" }}>{Icons.refresh()}</span>
+                Generating...
+              </span>
+            ) : "Generate"}
+          </KBButton>
+        </div>
+        {toast && <div style={{ marginTop: 12 }}><KBToast message={toast.msg} type={toast.type} /></div>}
+      </KBCard>
 
       {/* Briefs list */}
-      <div style={{ fontSize: "0.8rem", fontWeight: 600, color: "rgba(255,255,255,0.6)", marginTop: 16, marginBottom: 8 }}>
-        {(briefs ?? []).length} executive briefs
-      </div>
-      {(briefs ?? []).map((b) => {
-        const isExpanded = expanded === b.id;
-        return (
-          <div key={b.id} style={cardStyle}>
-            <div style={{ ...rowStyle, cursor: "pointer" }} onClick={() => setExpanded(isExpanded ? null : b.id)}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={badgeStyle("rgb(168,85,247)")}>brief</span>
-                <span style={{ fontWeight: 500, color: "#fff" }}>{b.title}</span>
-                {b.issue && <span style={mutedSm}>{b.issue}</span>}
-                <span style={{ ...mutedSm, marginLeft: "auto" }}>{isExpanded ? "▾" : "▸"}</span>
-              </div>
-            </div>
-            {isExpanded && (
-              <div style={{ padding: "12px 14px", fontSize: "0.85rem", color: "rgba(255,255,255,0.8)", lineHeight: 1.6, whiteSpace: "pre-wrap", maxHeight: 500, overflowY: "auto" }}>
-                {b.content}
-              </div>
-            )}
-          </div>
-        );
-      })}
+      <KBSectionHeader title="Executive Briefs" count={briefList.length} />
+
+      {briefList.length === 0 ? (
+        <KBEmptyState
+          icon={Icons.brief(40)}
+          title="No briefs yet"
+          description="Generate an executive brief from a completed issue above, or enable auto-brief to generate them automatically."
+        />
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {briefList.map((b) => {
+            const isExpanded = expanded === b.id;
+            return (
+              <KBCard key={b.id} hoverable onClick={() => setExpanded(isExpanded ? null : b.id)}>
+                <div style={{ padding: "14px 18px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <KBBadge bg={KB.purpleBg} color={KB.purpleText}>Brief</KBBadge>
+                    <span style={{ fontSize: "0.9rem", fontWeight: 600, color: KB.textPrimary, flex: 1 }}>
+                      {b.title}
+                    </span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                      {b.issue && (
+                        <span style={{
+                          fontSize: "0.75rem", color: KB.textTertiary,
+                          fontFamily: "ui-monospace, monospace",
+                        }}>
+                          {b.issue}
+                        </span>
+                      )}
+                      <span style={{
+                        display: "flex", transition: "transform 0.2s ease",
+                        transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)",
+                        color: KB.textQuaternary,
+                      }}>
+                        {Icons.chevron()}
+                      </span>
+                    </div>
+                  </div>
+
+                  {isExpanded && (
+                    <div style={{
+                      marginTop: 14, padding: "16px 18px",
+                      borderRadius: KB.radiusSm, background: "rgba(0,0,0,0.15)",
+                      fontSize: "0.875rem", color: KB.textSecondary,
+                      lineHeight: 1.7, whiteSpace: "pre-wrap",
+                      maxHeight: 500, overflowY: "auto",
+                    }}>
+                      {b.content}
+                    </div>
+                  )}
+                </div>
+              </KBCard>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
 
-// ── Stats Tab ───────────────────────────────────────────────
+// ── Stats Tab (Overview) ───────────────────────────────────
 
 function KBStatsTab({ companyId }: { companyId: string }) {
   const { data: stats } = usePluginData<KBStats>("kb:stats", { companyId });
@@ -1184,41 +1827,60 @@ function KBStatsTab({ companyId }: { companyId: string }) {
 
   return (
     <div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 12, marginBottom: 16 }}>
+      {/* Metric cards */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 24 }}>
+        <KBMetricCard value={s.indexedIssues} label="Indexed Issues" icon={Icons.check(22)} />
+        <KBMetricCard value={s.uploadedDocuments} label="Documents" icon={Icons.doc(22)} />
+        <KBMetricCard value={s.generatedBriefs} label="Briefs" icon={Icons.brief(22)} />
+        <KBMetricCard value={folders?.hashCount ?? 0} label="Tracked Files" icon={Icons.folder(22)} />
+      </div>
+
+      {/* System status */}
+      <KBSectionHeader title="System Status" />
+      <KBCard>
         {[
-          { label: "Indexed Issues", value: s.indexedIssues },
-          { label: "Documents", value: s.uploadedDocuments },
-          { label: "Briefs", value: s.generatedBriefs },
-          { label: "Tracked Files", value: folders?.hashCount ?? 0 },
-        ].map((item) => (
-          <div key={item.label} style={{ textAlign: "center", padding: 14, ...cardStyle }}>
-            <div style={{ fontSize: "1.5rem", fontWeight: 700, color: "#fff" }}>{item.value}</div>
-            <div style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.5)" }}>{item.label}</div>
+          {
+            label: "MemOS",
+            value: connected ? "Connected" : "Disconnected",
+            color: connected ? KB.greenText : KB.redText,
+            dot: connected ? KB.green : KB.red,
+          },
+          {
+            label: "Watch Folders",
+            value: String(folders?.watchFolders?.length ?? 0),
+            color: KB.textPrimary,
+          },
+          ...(s.lastIndexAt ? [{
+            label: "Last Indexed",
+            value: new Date(s.lastIndexAt).toLocaleString(),
+            color: KB.textSecondary,
+          }] : []),
+          ...(s.lastBriefAt ? [{
+            label: "Last Brief",
+            value: new Date(s.lastBriefAt).toLocaleString(),
+            color: KB.textSecondary,
+          }] : []),
+        ].map((row, i, arr) => (
+          <div key={row.label} style={{
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            padding: "13px 18px",
+            borderBottom: i < arr.length - 1 ? `1px solid ${KB.cardBorder}` : "none",
+          }}>
+            <span style={{ fontSize: "0.85rem", color: KB.textTertiary }}>{row.label}</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              {"dot" in row && (
+                <span style={{
+                  width: 7, height: 7, borderRadius: "50%",
+                  background: row.dot, display: "inline-block",
+                }} />
+              )}
+              <span style={{ fontSize: "0.85rem", color: row.color, fontWeight: 500 }}>
+                {row.value}
+              </span>
+            </div>
           </div>
         ))}
-      </div>
-      <div style={cardStyle}>
-        <div style={rowStyle}>
-          <span style={{ color: "rgba(255,255,255,0.5)" }}>MemOS</span>
-          <span style={{ float: "right", color: connected ? "rgb(34,197,94)" : "rgb(239,68,68)" }}>{connected ? "Connected" : "Disconnected"}</span>
-        </div>
-        <div style={rowStyle}>
-          <span style={{ color: "rgba(255,255,255,0.5)" }}>Watch Folders</span>
-          <span style={{ float: "right", color: "#fff" }}>{folders?.watchFolders?.length ?? 0}</span>
-        </div>
-        {s.lastIndexAt && (
-          <div style={rowStyle}>
-            <span style={{ color: "rgba(255,255,255,0.5)" }}>Last Indexed</span>
-            <span style={{ float: "right", color: "#fff" }}>{new Date(s.lastIndexAt).toLocaleString()}</span>
-          </div>
-        )}
-        {s.lastBriefAt && (
-          <div style={{ ...rowStyle, borderBottom: "none" }}>
-            <span style={{ color: "rgba(255,255,255,0.5)" }}>Last Brief</span>
-            <span style={{ float: "right", color: "#fff" }}>{new Date(s.lastBriefAt).toLocaleString()}</span>
-          </div>
-        )}
-      </div>
+      </KBCard>
     </div>
   );
 }

@@ -157,7 +157,7 @@ var MemosClient = class {
   // ── Health check ────────────────────────────────────────────
   async healthy() {
     try {
-      const res = await fetch(`${this.baseUrl}/openapi.json`, {
+      const res = await fetch(`${this.baseUrl}/health`, {
         signal: AbortSignal.timeout(5e3)
       });
       return res.ok;
@@ -166,20 +166,10 @@ var MemosClient = class {
     }
   }
   // ── User registration ──────────────────────────────────────
-  /** Register an agent as a MemOS user. Idempotent — safe to call repeatedly. */
-  async registerUser(agentId, agentName) {
-    try {
-      await fetch(`${this.baseUrl}/product/register`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          user_id: agentId,
-          user_name: agentName
-        }),
-        signal: AbortSignal.timeout(this.timeoutMs)
-      });
-    } catch {
-    }
+  /** No-op — MemOS auto-creates users on first /product/add call.
+   *  The /product/register endpoint doesn't exist in MemOS server_router.
+   *  Kept for API compatibility with existing callers. */
+  async registerUser(_agentId, _agentName) {
   }
   // ── Store memory ───────────────────────────────────────────
   /** Store content as memory for an agent in a company cube. */
